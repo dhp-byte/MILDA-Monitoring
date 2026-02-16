@@ -187,7 +187,7 @@ try:
         data = data_raw.rename(columns={
             'Province': 'province',
             'District sanitaire de :': 'district',
-            'Est-ce que le ménage a-t-il été servis en MILDA lors de la campagne de distribution de masse ?': 'menage_servi',
+            'Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?': 'menage_servi',
             'Nombre des personnes qui habitent dans le ménage': 'nb_personnes',
             'Combien de MILDA avez-vous reçues ?': 'nb_milda_recues',
             'verif_cle': 'verif_cle',
