@@ -192,7 +192,7 @@ try:
             'Combien de MILDA avez-vous reçues ?': 'nb_milda_recues',
             'verif_cle': 'verif_cle',
             'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?': 'menage_marque',
-            'Avez-vous été sensibilisé sur l\'utilisation correcte du MILDA par les relais communautaires ?': 'sensibilise'
+            'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?': 'sensibilise'
         }) #[cite: 18, 19, 20]
         
         for col in ['menage_servi', 'verif_cle', 'menage_marque', 'sensibilise']:
