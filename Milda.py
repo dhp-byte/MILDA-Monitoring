@@ -91,20 +91,28 @@ def create_bar_chart(df, x_col, y_cols, title, subtitle, colors=None):
     return fig
 
 def add_table_to_doc(doc, df):
-    """Ajoute un DataFrame comme tableau dans le document Word"""
+    """Ajoute un DataFrame comme tableau dans le document Word de manière sécurisée"""
     if df.empty:
         doc.add_paragraph("Aucune donnée disponible")
         return
+        
+    # Création du tableau : nb de lignes = données + 1 (en-tête)
     table = doc.add_table(rows=len(df) + 1, cols=len(df.columns))
     table.style = 'Light Grid Accent 1'
+    
+    # Remplissage de l'en-tête
     for i, col in enumerate(df.columns):
         cell = table.rows[0].cells[i]
         cell.text = str(col)
         cell.paragraphs[0].runs[0].font.bold = True
-    for i, row in df.iterrows():
-        for j, value in enumerate(row):
-            table.rows[i + 1].cells[j].text = str(value)
-    doc.add_paragraph() #[cite: 13, 14]
+    
+    # Remplissage des données avec un compteur indépendant de l'index (enumerate)
+    for row_idx, (idx, row) in enumerate(df.iterrows()):
+        for col_idx, value in enumerate(row):
+            # On utilise row_idx + 1 pour cibler la bonne ligne dans le Word
+            table.rows[row_idx + 1].cells[col_idx].text = str(value) if not pd.isna(value) else ""
+            
+    doc.add_paragraph()
 
 def create_docx_report(data, tables, graphs_bytes):
     """Génère le rapport Word (DOCX)"""
