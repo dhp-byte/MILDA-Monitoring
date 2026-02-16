@@ -159,7 +159,7 @@ def create_docx_report(data, tables, graphs_bytes):
 # =========================
 
 st.title("Rapport de Monitorage Externe – MILDA")
-st.markdown("### Analyse des indicateurs de qualité du dénombrement-distribution") [cite: 14, 15]
+st.markdown("### Analyse des indicateurs de qualité du dénombrement-distribution")
 
 with st.sidebar:
     st.header("Configuration")
