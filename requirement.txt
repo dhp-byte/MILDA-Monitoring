@@ -1,14 +1,7 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime
-import io
-import zipfile
-import re
-import math
-from pathlib import Path
-from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+streamlit>=1.28.0
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+plotly>=5.17.0
+python-docx>=1.0.0
+kaleido>=0.2.1
