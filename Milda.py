@@ -40,7 +40,7 @@ def yn(x):
     elif x in ['non', 'no', 'n', '0', 'false']:
         return 'Non'
     else:
-        return x [cite: 2, 3]
+        return x #[cite: 2, 3]
 
 def milda_attendues(n_personnes):
     """Calcule le nombre de MILDA attendues (1 MILDA pour 2 personnes)"""
@@ -57,7 +57,7 @@ def safe_filename(x):
     x = str(x)
     x = re.sub(r'[^A-Za-z0-9]+', '_', x)
     x = re.sub(r'^_+|_+$', '', x)
-    return x [cite: 4]
+    return x #[cite: 4]
 
 def create_bar_chart(df, x_col, y_cols, title, subtitle, colors=None):
     """Crée un graphique à barres avec Plotly"""
