@@ -48,7 +48,7 @@ def milda_attendues(n_personnes):
         n = float(n_personnes)
         if pd.isna(n):
             return np.nan
-        return math.ceil(n / 2) [cite: 3]
+        return math.ceil(n / 2) #[cite: 3]
     except:
         return np.nan
 
@@ -73,7 +73,7 @@ def create_bar_chart(df, x_col, y_cols, title, subtitle, colors=None):
             marker_color=colors[i % len(colors)],
             text=df[col].apply(lambda x: f'{x:.1f}%'),
             textposition='outside'
-        )) [cite: 4, 5]
+        )) #[cite: 4, 5]
     fig.update_layout(
         title={
             'text': f"<b>{title}</b><br><sub>{subtitle}</sub>",
@@ -87,7 +87,7 @@ def create_bar_chart(df, x_col, y_cols, title, subtitle, colors=None):
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
         template="plotly_white"
-    ) [cite: 6, 7]
+    ) #[cite: 6, 7]
     return fig
 
 def add_table_to_doc(doc, df):
@@ -104,7 +104,7 @@ def add_table_to_doc(doc, df):
     for i, row in df.iterrows():
         for j, value in enumerate(row):
             table.rows[i + 1].cells[j].text = str(value)
-    doc.add_paragraph() [cite: 13, 14]
+    doc.add_paragraph() #[cite: 13, 14]
 
 def create_docx_report(data, tables, graphs_bytes):
     """Génère le rapport Word (DOCX)"""
@@ -119,17 +119,17 @@ def create_docx_report(data, tables, graphs_bytes):
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
     date_p = doc.add_paragraph(datetime.now().strftime('%d/%m/%Y'))
     date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_page_break() [cite: 7, 8]
+    doc.add_page_break() #[cite: 7, 8]
     
     doc.add_heading('1. Indicateurs de qualité du dénombrement-distribution', level=1)
-    doc.add_paragraph('Indicateurs suivis : % ménages servis, % ménages correctement servis, % ménages coupon, % marquage, % information utilisation correcte.') [cite: 9]
+    doc.add_paragraph('Indicateurs suivis : % ménages servis, % ménages correctement servis, % ménages coupon, % marquage, % information utilisation correcte.') #[cite: 9]
     
     doc.add_heading('1.1 Pourcentage des ménages servis et correctement servis par Province', level=2)
     if 'G1' in graphs_bytes:
-        doc.add_picture(io.BytesIO(graphs_bytes['G1']), width=Inches(6.5)) [cite: 9]
+        doc.add_picture(io.BytesIO(graphs_bytes['G1']), width=Inches(6.5)) #[cite: 9]
     
     doc.add_heading('1.2 Tableau résumé des indicateurs par Province', level=2)
-    add_table_to_doc(doc, tables['T0_resume_prov']) [cite: 10]
+    add_table_to_doc(doc, tables['T0_resume_prov']) #[cite: 10]
     
     doc.add_heading('1.3 Tableaux par District sanitaire (DS) – par Province', level=2)
     provinces = sorted(data['province'].dropna().unique())
@@ -143,15 +143,15 @@ def create_docx_report(data, tables, graphs_bytes):
         add_table_to_doc(doc, t2p)
         doc.add_heading('C) Information sur l\'utilisation correcte des MILDA (par DS)', level=4)
         t3p = tables['T3_info_ds'][tables['T3_info_ds']['province'] == province].drop('province', axis=1)
-        add_table_to_doc(doc, t3p) [cite: 10, 11, 12]
+        add_table_to_doc(doc, t3p) #[cite: 10, 11, 12]
     
     doc.add_heading('1.4 Pourcentage de ménages avec marquage par Province', level=2)
     if 'G2' in graphs_bytes:
-        doc.add_picture(io.BytesIO(graphs_bytes['G2']), width=Inches(6.5)) [cite: 12]
+        doc.add_picture(io.BytesIO(graphs_bytes['G2']), width=Inches(6.5)) #[cite: 12]
     
     doc.add_heading('1.5 Pourcentage de ménages ayant reçu l\'information (utilisation correcte) par Province', level=2)
     if 'G3' in graphs_bytes:
-        doc.add_picture(io.BytesIO(graphs_bytes['G3']), width=Inches(6.5)) [cite: 12, 13]
+        doc.add_picture(io.BytesIO(graphs_bytes['G3']), width=Inches(6.5)) #[cite: 12, 13]
     return doc
 
 # =========================
@@ -167,7 +167,7 @@ with st.sidebar:
     sheet_name = st.text_input("Nom de la feuille Excel", value="MONITORAGE EXTERNE DU DENOMB...")
     st.markdown("---")
     st.markdown("**Indicateurs suivis:**")
-    st.markdown("- % ménages servis\n- % ménages correctement servis\n- % ménages coupon\n- % ménages marquage\n- % ménages info utilisation correcte") [cite: 15, 16]
+    st.markdown("- % ménages servis\n- % ménages correctement servis\n- % ménages coupon\n- % ménages marquage\n- % ménages info utilisation correcte") #[cite: 15, 16]
 
 if uploaded_file is None:
     st.info("Veuillez importer un fichier Excel pour commencer l'analyse")
@@ -182,7 +182,7 @@ try:
         try:
             data_raw = pd.read_excel(uploaded_file, sheet_name=sheet_name)
         except:
-            data_raw = pd.read_excel(uploaded_file, sheet_name=0) [cite: 17]
+            data_raw = pd.read_excel(uploaded_file, sheet_name=0) #[cite: 17]
         
         data = data_raw.rename(columns={
             'Province': 'province',
@@ -193,16 +193,16 @@ try:
             'verif_cle': 'verif_cle',
             'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?': 'menage_marque',
             'Avez-vous été sensibilisé sur l\'utilisation correcte du MILDA par les relais communautaires ?': 'sensibilise'
-        }) [cite: 18, 19, 20]
+        }) #[cite: 18, 19, 20]
         
         for col in ['menage_servi', 'verif_cle', 'menage_marque', 'sensibilise']:
-            data[col] = data[col].apply(yn) [cite: 20]
+            data[col] = data[col].apply(yn) #[cite: 20]
         
         data['nb_personnes'] = pd.to_numeric(data['nb_personnes'], errors='coerce')
         data['indic_servi'] = data['menage_servi'].apply(lambda x: 1 if x == 'Oui' else (0 if x == 'Non' else np.nan))
         data['indic_correct'] = data.apply(lambda row: 1 if (row['menage_servi'] == 'Oui' and row['verif_cle'] == 'Oui') else (0 if row['menage_servi'] == 'Oui' else np.nan), axis=1)
         data['indic_marque'] = data.apply(lambda row: 1 if (row['menage_servi'] == 'Oui' and row['menage_marque'] == 'Oui') else (0 if row['menage_servi'] == 'Oui' else np.nan), axis=1)
-        data['indic_info'] = data['sensibilise'].apply(lambda x: 1 if x == 'Oui' else (0 if x == 'Non' else np.nan)) [cite: 21, 22, 23, 24]
+        data['indic_info'] = data['sensibilise'].apply(lambda x: 1 if x == 'Oui' else (0 if x == 'Non' else np.nan)) #[cite: 21, 22, 23, 24]
 
         # T0: Résumé par province
         T0_resume_prov = data.groupby('province').agg(
@@ -211,7 +211,7 @@ try:
             pct_correct=('indic_correct', lambda x: round(100 * (x == 1).mean(), 1)),
             pct_marque=('indic_marque', lambda x: round(100 * (x == 1).mean(), 1)),
             pct_info=('indic_info', lambda x: round(100 * (x == 1).mean(), 1))
-        ).reset_index() [cite: 24, 25]
+        ).reset_index() #[cite: 24, 25]
 
         # Tableaux détaillés (T1, T2, T3)
         T1_servis_ds = data.groupby(['province', 'district']).agg(
@@ -228,7 +228,7 @@ try:
             pct_info=('indic_info', lambda x: round(100 * (x == 1).mean(), 1))
         ).reset_index()
         
-        tables = {'T0_resume_prov': T0_resume_prov, 'T1_servis_ds': T1_servis_ds, 'T2_marque_ds': T2_marque_ds, 'T3_info_ds': T3_info_ds} [cite: 27, 28, 29, 30, 31]
+        tables = {'T0_resume_prov': T0_resume_prov, 'T1_servis_ds': T1_servis_ds, 'T2_marque_ds': T2_marque_ds, 'T3_info_ds': T3_info_ds} #[cite: 27, 28, 29, 30, 31]
 
         # Graphiques
         tab_servi_prov = T0_resume_prov.sort_values('pct_servis')
@@ -236,24 +236,24 @@ try:
         
         G2 = go.Figure(go.Bar(y=T0_resume_prov['province'], x=T0_resume_prov['pct_marque'], orientation='h'))
         G3 = go.Figure(go.Bar(y=T0_resume_prov['province'], x=T0_resume_prov['pct_info'], orientation='h'))
-        graphs = {'G1': G1, 'G2': G2, 'G3': G3} [cite: 32, 33, 34, 35, 36, 37]
+        graphs = {'G1': G1, 'G2': G2, 'G3': G3} #[cite: 32, 33, 34, 35, 36, 37]
 
     # Affichage Streamlit
-    tab1, tab2, tab3, tab4 = st.tabs(["Vue d'ensemble", "Graphiques", "Tableaux", "Téléchargements"]) [cite: 38]
+    tab1, tab2, tab3, tab4 = st.tabs(["Vue d'ensemble", "Graphiques", "Tableaux", "Téléchargements"]) #[cite: 38]
     
     with tab1:
         st.subheader("Résumé par Province")
-        st.dataframe(T0_resume_prov, use_container_width=True) [cite: 40]
+        st.dataframe(T0_resume_prov, use_container_width=True) #[cite: 40]
         
     with tab2:
         st.plotly_chart(G1, use_container_width=True)
         st.plotly_chart(G2, use_container_width=True)
-        st.plotly_chart(G3, use_container_width=True) [cite: 40]
+        st.plotly_chart(G3, use_container_width=True) #[cite: 40]
 
     with tab3:
-        prov = st.selectbox("Filtrer par Province", ['Toutes'] + sorted(data['province'].unique().tolist())) [cite: 41]
+        prov = st.selectbox("Filtrer par Province", ['Toutes'] + sorted(data['province'].unique().tolist())) #[cite: 41]
         display_t1 = T1_servis_ds if prov == 'Toutes' else T1_servis_ds[T1_servis_ds['province'] == prov]
-        st.dataframe(display_t1, use_container_width=True) [cite: 42, 43]
+        st.dataframe(display_t1, use_container_width=True) #[cite: 42, 43]
 
     with tab4:
         if st.button("Générer le rapport Word complet"):
@@ -261,7 +261,7 @@ try:
             doc = create_docx_report(data, tables, graphs_bytes)
             docx_buffer = io.BytesIO()
             doc.save(docx_buffer)
-            st.download_button("Télécharger le rapport Word", docx_buffer.getvalue(), "Rapport_MILDA.docx") [cite: 59, 60, 61, 62]
+            st.download_button("Télécharger le rapport Word", docx_buffer.getvalue(), "Rapport_MILDA.docx") #[cite: 59, 60, 61, 62]
 
     # FOOTER (Section corrigée)
     st.markdown("---")
@@ -270,8 +270,8 @@ try:
         <p>Rapport de Monitorage Externe MILDA - Version Python/Streamlit</p>
         <p>Généré le {}</p>
     </div>
-    """.format(datetime.now().strftime('%d/%m/%Y à %H:%M')), unsafe_allow_html=True) [cite: 63]
+    """.format(datetime.now().strftime('%d/%m/%Y à %H:%M')), unsafe_allow_html=True) #[cite: 63]
 
 except Exception as e:
     st.error(f"Erreur lors du traitement : {str(e)}")
-    st.exception(e) [cite: 63]
+    st.exception(e) #[cite: 63]
