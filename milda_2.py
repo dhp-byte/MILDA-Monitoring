@@ -1152,19 +1152,19 @@ def page_statistics(data: pd.DataFrame):
     if 'nb_personnes' in data.columns:
     # 1. Créer une copie des données sans les valeurs manquantes pour cette colonne
     # Cela garantit que l'index de 'clean_data' sera le même que celui du masque 'outliers'
-    clean_data = data.dropna(subset=['nb_personnes']).copy()
+        clean_data = data.dropna(subset=['nb_personnes']).copy()
     
     # 2. Calculer les outliers sur ces données propres
-    outliers = DataProcessor.detect_outliers(clean_data['nb_personnes'])
-    n_outliers = outliers.sum()
+        outliers = DataProcessor.detect_outliers(clean_data['nb_personnes'])
+        n_outliers = outliers.sum()
     
-    st.info(f"🔎 {n_outliers} valeurs aberrantes détectées dans la taille des ménages")
+        st.info(f"🔎 {n_outliers} valeurs aberrantes détectées dans la taille des ménages")
     
-    if n_outliers > 0:
+        if n_outliers > 0:
         # 3. Utiliser clean_data (et non data) pour le filtrage
-        outlier_data = clean_data[outliers]
+            outlier_data = clean_data[outliers]
         
-        st.dataframe(
+            st.dataframe(
             outlier_data[['province', 'district', 'village', 'nb_personnes', 'nb_milda_recues']].head(20),
             use_container_width=True
         )
