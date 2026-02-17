@@ -1252,58 +1252,58 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     st.dataframe(summary_df, use_container_width=True)
 
  def page_agent_tracking(data: pd.DataFrame):
-    st.markdown("## 🏃 Suivi du parcours des agents")
+     st.markdown("## 🏃 Suivi du parcours des agents")
     
-    df_track = data.copy()
+     df_track = data.copy()
 
     # 1. Conversion sécurisée
-    df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+     df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
     
     # 2. Création du timestamp combiné
-    if 'heure_interview' in df_track.columns:
-        df_track['timestamp'] = pd.to_datetime(
+     if 'heure_interview' in df_track.columns:
+         df_track['timestamp'] = pd.to_datetime(
             df_track['date_enquete'].dt.date.astype(str) + ' ' + df_track['heure_interview'].astype(str),
             errors='coerce'
-        )
-    else:
-        df_track['timestamp'] = df_track['date_enquete']
+         )
+     else:
+         df_track['timestamp'] = df_track['date_enquete']
 
     # 3. Nettoyage et création d'une colonne HEURE formatée en texte (pour éviter le .dt plus tard)
-    df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
-    df_track['heure_display'] = df_track['timestamp'].dt.strftime('%H:%M')
+     df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
+     df_track['heure_display'] = df_track['timestamp'].dt.strftime('%H:%M')
     
-    if df_track.empty:
-        st.warning("⚠️ Aucune donnée avec GPS et Heure valide.")
-        return
+     if df_track.empty:
+         st.warning("⚠️ Aucune donnée avec GPS et Heure valide.")
+         return
 
     # 4. Tri et Sélection
-    df_track = df_track.sort_values(['agent_name', 'timestamp'])
-    selected_agent = st.selectbox("Sélectionner un enquêteur", sorted(df_track['agent_name'].unique()))
-    agent_path = df_track[df_track['agent_name'] == selected_agent]
+     df_track = df_track.sort_values(['agent_name', 'timestamp'])
+     selected_agent = st.selectbox("Sélectionner un enquêteur", sorted(df_track['agent_name'].unique()))
+     agent_path = df_track[df_track['agent_name'] == selected_agent]
 
     # 5. Carte Plotly (On utilise 'heure_display' qui est du texte pur)
-    fig = px.line_mapbox(
-        agent_path,
-        lat="latitude",
-        lon="longitude",
-        hover_name="heure_display", 
-        zoom=12,
-        height=600,
-        title=f"Itinéraire de l'agent : {selected_agent}"
-    )
+     fig = px.line_mapbox(
+         agent_path,
+         lat="latitude",
+         lon="longitude",
+         hover_name="heure_display", 
+         zoom=12,
+         height=600,
+         title=f"Itinéraire de l'agent : {selected_agent}"
+     )
     
-    fig.add_trace(go.Scattermapbox(
-        lat=agent_path['latitude'],
-        lon=agent_path['longitude'],
-        mode='markers+text',
-        marker=go.scattermapbox.Marker(size=12, color='red'),
-        text=agent_path['heure_display'],
-        textposition="top right",
-        name="Point d'enquête"
-    ))
+     fig.add_trace(go.Scattermapbox(
+         lat=agent_path['latitude'],
+         lon=agent_path['longitude'],
+         mode='markers+text',
+         marker=go.scattermapbox.Marker(size=12, color='red'),
+         text=agent_path['heure_display'],
+         textposition="top right",
+         name="Point d'enquête"
+     ))
 
-    fig.update_layout(mapbox_style="open-street-map", showlegend=True)
-    st.plotly_chart(fig, use_container_width=True)
+     fig.update_layout(mapbox_style="open-street-map", showlegend=True)
+     st.plotly_chart(fig, use_container_width=True)
         
 def page_data_quality(data: pd.DataFrame):
     st.markdown("## 🛡️ Contrôle Qualité des Données")
