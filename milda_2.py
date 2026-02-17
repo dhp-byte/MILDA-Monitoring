@@ -1253,404 +1253,1093 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     summary_df.columns = ['Valeur']
     st.dataframe(summary_df, use_container_width=True)
 
-def page_agent_tracking(data: pd.DataFrame):
-    """Page de suivi du parcours des agents avec visualisation satellite"""
-    
-    st.markdown("## 🏃 Suivi du parcours des agents")
-    
-    df_track = data.copy()
 
-    # 1. Conversion de la date
-    df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+################################################################################
+# 1. FONCTION page_agent_tracking() CORRIGÉE
+################################################################################
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calcule la distance entre deux points GPS en kilomètres"""
+    R = 6371  # Rayon de la Terre en km
     
-    # 2. Création du timestamp
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_lat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    return R * c
+
+
+def page_agent_tracking(data: pd.DataFrame):
+    """
+    Page de suivi géographique des agents - VERSION CORRIGÉE
+    
+    Corrections apportées :
+    - Points de départ (vert) et d'arrivée (rouge) clairement visibles
+    - Libellés d'heures affichés sur chaque point
+    - Marqueurs améliorés avec icônes distinctives
+    - Popup enrichis avec toutes les informations
+    """
+    
+    st.markdown("## 🗺️ Suivi du Parcours des Agents")
+    
+    # Vérification des colonnes nécessaires
+    required_cols = ['latitude', 'longitude', 'agent_name']
+    missing_cols = [col for col in required_cols if col not in data.columns]
+    
+    if missing_cols:
+        st.error(f"❌ Colonnes manquantes : {', '.join(missing_cols)}")
+        return
+    
+    # Filtrer les données avec coordonnées valides
+    df_track = data.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
+    
+    if len(df_track) == 0:
+        st.warning("⚠️ Aucune donnée de localisation disponible")
+        return
+    
+    # Conversion de la date/heure
+    if 'date_enquete' in df_track.columns:
+        df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+    
+    # Créer un timestamp pour le tri
     if 'heure_interview' in df_track.columns:
         df_track['timestamp'] = pd.to_datetime(
-            df_track['date_enquete'].dt.date.astype(str) + ' ' + df_track['heure_interview'].astype(str),
+            df_track['date_enquete'].astype(str) + ' ' + df_track['heure_interview'].astype(str),
             errors='coerce'
         )
-    else:
+    elif 'date_enquete' in df_track.columns:
         df_track['timestamp'] = df_track['date_enquete']
-
-    # 3. Nettoyage
-    df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
-
-    if df_track.empty:
-        st.warning("⚠️ Aucune donnée chronologique ou GPS valide trouvée.")
-        return
-
-    # 4. Heure en texte
-    df_track['heure_texte'] = df_track['timestamp'].apply(lambda x: x.strftime('%H:%M'))
-
-    # 5. Tri chronologique
-    df_track = df_track.sort_values(['agent_name', 'timestamp'])
-
-    # 6. Sélection de l'agent
-    col1, col2 = st.columns([2, 1])
+    else:
+        df_track['timestamp'] = pd.Timestamp.now()
+    
+    # Trier par agent et timestamp
+    df_track = df_track.sort_values(['agent_name', 'timestamp']).reset_index(drop=True)
+    
+    st.info(f"📍 **{len(df_track)} points GPS** collectés par **{df_track['agent_name'].nunique()} agents**")
+    
+    # Interface de sélection
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns([2, 2, 1])
     
     with col1:
-        agents = sorted(df_track['agent_name'].unique())
-        selected_agent = st.selectbox("🔍 Sélectionner un enquêteur", agents)
+        agents = sorted(df_track['agent_name'].dropna().unique())
+        selected_agent = st.selectbox("🧑‍💼 Sélectionner un agent", agents)
     
     with col2:
-        map_style = st.selectbox(
-            "🗺️ Style de carte",
-            ["Satellite", "Terrain", "Standard"],
-            help="Choisissez le style d'affichage de la carte"
-        )
+        # Filtre de date
+        if df_track['date_enquete'].notna().any():
+            dates_available = df_track['date_enquete'].dt.date.unique()
+            selected_date = st.selectbox(
+                "📅 Date",
+                ['Toutes les dates'] + sorted([d for d in dates_available if pd.notna(d)], reverse=True)
+            )
+        else:
+            selected_date = 'Toutes les dates'
     
-    agent_path = df_track[df_track['agent_name'] == selected_agent].copy()
-
-    if agent_path.empty:
-        st.warning(f"Aucune donnée pour l'agent {selected_agent}")
+    with col3:
+        show_labels = st.checkbox("🏷️ Afficher les heures", value=True)
+    
+    # Filtrer les données pour l'agent sélectionné
+    agent_data = df_track[df_track['agent_name'] == selected_agent].copy()
+    
+    if selected_date != 'Toutes les dates':
+        agent_data = agent_data[agent_data['date_enquete'].dt.date == selected_date]
+    
+    if len(agent_data) == 0:
+        st.warning(f"Aucune donnée disponible pour {selected_agent}")
         return
     
-    # Calcul des statistiques du parcours
+    # Trier par timestamp
+    agent_data = agent_data.sort_values('timestamp').reset_index(drop=True)
+    
+    # Calculs de distance
+    agent_data['distance_depuis_precedent'] = 0.0
+    for i in range(1, len(agent_data)):
+        lat1, lon1 = agent_data.loc[i-1, ['latitude', 'longitude']]
+        lat2, lon2 = agent_data.loc[i, ['latitude', 'longitude']]
+        agent_data.loc[i, 'distance_depuis_precedent'] = haversine_distance(lat1, lon1, lat2, lon2)
+    
+    agent_data['distance_cumulee'] = agent_data['distance_depuis_precedent'].cumsum()
+    
+    # Préparer les heures pour affichage
+    agent_data['heure_texte'] = agent_data['timestamp'].dt.strftime('%H:%M')
+    
+    # Afficher les statistiques
     st.markdown("---")
-    st.markdown("### 📊 Statistiques du parcours")
+    st.markdown(f"### 📊 Statistiques - {selected_agent}")
     
-    # Calcul de la distance totale (approximation)
-    def haversine_distance(lat1, lon1, lat2, lon2):
-        """Calcule la distance entre deux points GPS en km"""
-        from math import radians, cos, sin, asin, sqrt
-        
-        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-        dlon = lon2 - lon1
-        dlat = lat2 - lat1
-        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-        c = 2 * asin(sqrt(a))
-        km = 6371 * c
-        return km
-    
-    total_distance = 0
-    for i in range(len(agent_path) - 1):
-        lat1 = agent_path.iloc[i]['latitude']
-        lon1 = agent_path.iloc[i]['longitude']
-        lat2 = agent_path.iloc[i+1]['latitude']
-        lon2 = agent_path.iloc[i+1]['longitude']
-        total_distance += haversine_distance(lat1, lon1, lat2, lon2)
-    
-    # Durée totale
-    duree = agent_path['timestamp'].max() - agent_path['timestamp'].min()
-    heures = duree.total_seconds() / 3600
-    
-    # Vitesse moyenne
-    vitesse_moy = total_distance / heures if heures > 0 else 0
-    
-    # Affichage des statistiques
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Points d'enquête</p>
-                <p class="kpi-value">{len(agent_path)}</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.metric("Points d'enquête", len(agent_data))
     
     with col2:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Distance totale</p>
-                <p class="kpi-value">{total_distance:.2f} km</p>
-            </div>
-        """, unsafe_allow_html=True)
+        distance_totale = agent_data['distance_depuis_precedent'].sum()
+        st.metric("Distance totale", f"{distance_totale:.2f} km")
     
     with col3:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Durée totale</p>
-                <p class="kpi-value">{int(heures)}h {int((heures % 1) * 60)}min</p>
-            </div>
-        """, unsafe_allow_html=True)
+        if len(agent_data) > 1:
+            duree = (agent_data['timestamp'].max() - agent_data['timestamp'].min()).total_seconds() / 3600
+            st.metric("Durée", f"{duree:.1f} heures")
+        else:
+            st.metric("Durée", "N/A")
     
     with col4:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Vitesse moyenne</p>
-                <p class="kpi-value">{vitesse_moy:.1f} km/h</p>
-            </div>
-        """, unsafe_allow_html=True)
+        if len(agent_data) > 1 and distance_totale > 0:
+            vitesse_moy = distance_totale / duree if duree > 0 else 0
+            st.metric("Vitesse moyenne", f"{vitesse_moy:.1f} km/h")
+        else:
+            st.metric("Vitesse moyenne", "N/A")
     
     st.markdown("---")
     
-    # Création de la carte avec le style sélectionné
-    st.markdown(f"### 🗺️ Carte du parcours - {selected_agent}")
+    # ========== CRÉATION DE LA CARTE AMÉLIORÉE ==========
     
-    # Mapping des styles de carte
-    style_mapping = {
-        "Satellite": "satellite-streets",
-        "Terrain": "outdoors",
-        "Standard": "open-street-map"
-    }
+    # Centre de la carte
+    center_lat = agent_data['latitude'].mean()
+    center_lon = agent_data['longitude'].mean()
     
-    mapbox_style = style_mapping.get(map_style, "open-street-map")
-    
-    # Création de la figure avec la ligne de parcours
-    fig = go.Figure()
-    
-    # 1. Ligne de parcours (en bleu)
-    fig.add_trace(go.Scattermapbox(
-        lat=agent_path['latitude'],
-        lon=agent_path['longitude'],
-        mode='lines',
-        line=dict(width=3, color='blue'),
-        name='Parcours',
-        hoverinfo='skip'
-    ))
-    
-    # 2. Points de départ et d'arrivée (marqueurs spéciaux)
-    # Point de départ (vert)
-    fig.add_trace(go.Scattermapbox(
-        lat=[agent_path.iloc[0]['latitude']],
-        lon=[agent_path.iloc[0]['longitude']],
-        mode='markers+text',
-        marker=go.scattermapbox.Marker(
-            size=20,
-            color='green',
-            symbol='marker'
-        ),
-        text=['DÉPART'],
-        textposition="top center",
-        textfont=dict(size=12, color="white", family="Arial Black"),
-        name='Départ',
-        hovertemplate='<b>Point de départ</b><br>Heure: %{customdata}<extra></extra>',
-        customdata=[agent_path.iloc[0]['heure_texte']]
-    ))
-    
-    # Point d'arrivée (rouge)
-    fig.add_trace(go.Scattermapbox(
-        lat=[agent_path.iloc[-1]['latitude']],
-        lon=[agent_path.iloc[-1]['longitude']],
-        mode='markers+text',
-        marker=go.scattermapbox.Marker(
-            size=20,
-            color='red',
-            symbol='marker'
-        ),
-        text=['ARRIVÉE'],
-        textposition="top center",
-        textfont=dict(size=12, color="white", family="Arial Black"),
-        name='Arrivée',
-        hovertemplate='<b>Point d\'arrivée</b><br>Heure: %{customdata}<extra></extra>',
-        customdata=[agent_path.iloc[-1]['heure_texte']]
-    ))
-    
-    # 3. Points intermédiaires avec heures
-    if len(agent_path) > 2:
-        intermediate = agent_path.iloc[1:-1]
-        
-        fig.add_trace(go.Scattermapbox(
-            lat=intermediate['latitude'],
-            lon=intermediate['longitude'],
-            mode='markers+text',
-            marker=go.scattermapbox.Marker(
-                size=14,
-                color='orange',
-                symbol='circle'
-            ),
-            text=intermediate['heure_texte'],
-            textposition="top center",
-            textfont=dict(
-                size=11,
-                color="black",
-                family="Arial Black"
-            ),
-            name='Points d\'enquête',
-            hovertemplate='<b>Enquête</b><br>Heure: %{text}<br>Village: %{customdata}<extra></extra>',
-            customdata=intermediate['village'].fillna('N/A')
-        ))
-    
-    # 4. Annotations avec fond blanc pour les heures (amélioration visibilité)
-    annotations = []
-    for idx, row in agent_path.iterrows():
-        annotations.append({
-            'lat': row['latitude'],
-            'lon': row['longitude'],
-            'text': row['heure_texte'],
-            'font': {'size': 10, 'color': 'black', 'family': 'Arial Black'},
-            'bgcolor': 'rgba(255, 255, 255, 0.8)',
-            'bordercolor': 'black',
-            'borderwidth': 1,
-            'borderpad': 3
-        })
-    
-    # Configuration de la carte
-    if mapbox_style == "satellite-streets":
-        # Pour Mapbox Satellite, on a besoin d'un token
-        # Utilisation de la version publique avec carto-darkmatter comme alternative
-        fig.update_layout(
-            mapbox=dict(
-                style="satellite-streets",  # Nécessite un token Mapbox
-                center=dict(
-                    lat=agent_path['latitude'].mean(),
-                    lon=agent_path['longitude'].mean()
-                ),
-                zoom=12
-            ),
-            showlegend=True,
-            legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01,
-                bgcolor="rgba(255, 255, 255, 0.8)"
-            ),
-            margin={"r": 0, "t": 50, "l": 0, "b": 0},
-            height=700,
-            title={
-                'text': f'<b>Itinéraire détaillé de : {selected_agent}</b>',
-                'x': 0.5,
-                'xanchor': 'center',
-                'font': {'size': 18}
-            }
-        )
-    else:
-        fig.update_layout(
-            mapbox=dict(
-                style=mapbox_style,
-                center=dict(
-                    lat=agent_path['latitude'].mean(),
-                    lon=agent_path['longitude'].mean()
-                ),
-                zoom=12
-            ),
-            showlegend=True,
-            legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01,
-                bgcolor="rgba(255, 255, 255, 0.8)"
-            ),
-            margin={"r": 0, "t": 50, "l": 0, "b": 0},
-            height=700,
-            title={
-                'text': f'<b>Itinéraire détaillé de : {selected_agent}</b>',
-                'x': 0.5,
-                'xanchor': 'center',
-                'font': {'size': 18}
-            }
-        )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # 5. Timeline interactive du parcours
-    st.markdown("---")
-    st.markdown("### ⏱️ Timeline du parcours")
-    
-    timeline_data = agent_path[['timestamp', 'heure_texte', 'village', 'latitude', 'longitude']].copy()
-    timeline_data['point_num'] = range(1, len(timeline_data) + 1)
-    
-    # Création d'un graphique de timeline
-    fig_timeline = go.Figure()
-    
-    fig_timeline.add_trace(go.Scatter(
-        x=timeline_data['timestamp'],
-        y=timeline_data['point_num'],
-        mode='lines+markers+text',
-        marker=dict(size=12, color='orange', symbol='circle'),
-        line=dict(color='blue', width=2),
-        text=timeline_data['heure_texte'],
-        textposition='top center',
-        textfont=dict(size=10),
-        hovertemplate='<b>Point %{y}</b><br>Heure: %{text}<br>Village: %{customdata}<extra></extra>',
-        customdata=timeline_data['village'].fillna('N/A')
-    ))
-    
-    fig_timeline.update_layout(
-        title='<b>Chronologie des enquêtes</b>',
-        xaxis_title='Heure',
-        yaxis_title='N° du point',
-        height=400,
-        template='plotly_white',
-        hovermode='x unified'
+    # Créer la carte
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=13,
+        tiles='OpenStreetMap'
     )
     
-    st.plotly_chart(fig_timeline, use_container_width=True)
+    # Ajouter le tracé de la route (ligne bleue)
+    coordinates = agent_data[['latitude', 'longitude']].values.tolist()
     
-    # 6. Tableau détaillé du parcours
+    folium.PolyLine(
+        coordinates,
+        color='#0066ff',
+        weight=4,
+        opacity=0.7,
+        popup=f"Parcours de {selected_agent}"
+    ).add_to(m)
+    
+    # ========== POINTS INTERMÉDIAIRES ==========
+    for idx, row in agent_data.iterrows():
+        is_first = (idx == agent_data.index[0])
+        is_last = (idx == agent_data.index[-1])
+        
+        # Construire le popup avec toutes les informations
+        popup_html = f"""
+        <div style="font-family: Arial; min-width: 200px;">
+            <h4 style="margin: 0 0 10px 0; color: #333;">
+                {'🟢 DÉPART' if is_first else '🔴 ARRIVÉE' if is_last else f'📍 Point {idx + 1}'}
+            </h4>
+            <table style="width: 100%; font-size: 12px;">
+                <tr>
+                    <td style="padding: 3px;"><b>Heure:</b></td>
+                    <td style="padding: 3px;">{row['heure_texte']}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px;"><b>Village:</b></td>
+                    <td style="padding: 3px;">{row.get('village', 'N/A')}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px;"><b>District:</b></td>
+                    <td style="padding: 3px;">{row.get('district', 'N/A')}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px;"><b>Distance:</b></td>
+                    <td style="padding: 3px;">{row['distance_cumulee']:.2f} km</td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px;"><b>Servi:</b></td>
+                    <td style="padding: 3px;">{row.get('menage_servi', 'N/A')}</td>
+                </tr>
+            </table>
+        </div>
+        """
+        
+        if is_first:
+            # ========== MARQUEUR DE DÉPART (VERT) ==========
+            folium.Marker(
+                location=[row['latitude'], row['longitude']],
+                popup=folium.Popup(popup_html, max_width=300),
+                tooltip=f"🟢 DÉPART - {row['heure_texte']}",
+                icon=folium.Icon(
+                    color='green',
+                    icon='play',
+                    prefix='fa'
+                )
+            ).add_to(m)
+            
+            # Libellé d'heure pour le départ
+            if show_labels:
+                folium.CircleMarker(
+                    location=[row['latitude'], row['longitude']],
+                    radius=1,
+                    color='transparent',
+                    fill=False,
+                    popup=folium.Popup(f"""
+                        <div style="
+                            background-color: rgba(40, 167, 69, 0.95);
+                            color: white;
+                            padding: 5px 10px;
+                            border-radius: 5px;
+                            font-weight: bold;
+                            font-size: 13px;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                        ">
+                            🟢 {row['heure_texte']}
+                        </div>
+                    """, max_width=150, show=True)
+                ).add_to(m)
+        
+        elif is_last:
+            # ========== MARQUEUR D'ARRIVÉE (ROUGE) ==========
+            folium.Marker(
+                location=[row['latitude'], row['longitude']],
+                popup=folium.Popup(popup_html, max_width=300),
+                tooltip=f"🔴 ARRIVÉE - {row['heure_texte']}",
+                icon=folium.Icon(
+                    color='red',
+                    icon='stop',
+                    prefix='fa'
+                )
+            ).add_to(m)
+            
+            # Libellé d'heure pour l'arrivée
+            if show_labels:
+                folium.CircleMarker(
+                    location=[row['latitude'], row['longitude']],
+                    radius=1,
+                    color='transparent',
+                    fill=False,
+                    popup=folium.Popup(f"""
+                        <div style="
+                            background-color: rgba(220, 53, 69, 0.95);
+                            color: white;
+                            padding: 5px 10px;
+                            border-radius: 5px;
+                            font-weight: bold;
+                            font-size: 13px;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                        ">
+                            🔴 {row['heure_texte']}
+                        </div>
+                    """, max_width=150, show=True)
+                ).add_to(m)
+        
+        else:
+            # ========== POINTS INTERMÉDIAIRES (BLEU) ==========
+            # Couleur selon le statut du ménage
+            if row.get('menage_servi') == 'Oui':
+                if row.get('verif_cle') == 'Oui':
+                    marker_color = 'lightgreen'
+                else:
+                    marker_color = 'orange'
+            else:
+                marker_color = 'lightred'
+            
+            folium.CircleMarker(
+                location=[row['latitude'], row['longitude']],
+                radius=7,
+                color='#0066ff',
+                fill=True,
+                fillColor=marker_color,
+                fillOpacity=0.8,
+                weight=2,
+                popup=folium.Popup(popup_html, max_width=300),
+                tooltip=f"Point {idx + 1} - {row['heure_texte']}"
+            ).add_to(m)
+            
+            # Libellé d'heure pour points intermédiaires
+            if show_labels:
+                folium.Marker(
+                    location=[row['latitude'], row['longitude']],
+                    icon=folium.DivIcon(html=f"""
+                        <div style="
+                            background-color: rgba(255, 255, 255, 0.95);
+                            color: #333;
+                            padding: 3px 8px;
+                            border-radius: 4px;
+                            font-size: 11px;
+                            font-weight: bold;
+                            border: 1px solid #0066ff;
+                            white-space: nowrap;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                            transform: translate(-50%, -120%);
+                        ">
+                            {row['heure_texte']}
+                        </div>
+                    """)
+                ).add_to(m)
+    
+    # Ajouter une légende
+    legend_html = """
+    <div style="
+        position: fixed;
+        bottom: 50px;
+        right: 50px;
+        background-color: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        z-index: 1000;
+        font-family: Arial;
+        font-size: 12px;
+    ">
+        <h4 style="margin: 0 0 10px 0; font-size: 14px;">Légende</h4>
+        <div><span style="color: green; font-size: 16px;">⬤</span> Point de départ</div>
+        <div><span style="color: red; font-size: 16px;">⬤</span> Point d'arrivée</div>
+        <div><span style="color: lightgreen; font-size: 16px;">⬤</span> Servi correctement</div>
+        <div><span style="color: orange; font-size: 16px;">⬤</span> Servi (non conforme)</div>
+        <div><span style="color: lightcoral; font-size: 16px;">⬤</span> Non servi</div>
+        <div style="margin-top: 10px;"><span style="color: #0066ff;">━━━</span> Parcours</div>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_html))
+    
+    # Afficher la carte
+    st_folium(m, width=1400, height=700)
+    
+    # Tableau détaillé du parcours
     st.markdown("---")
     st.markdown("### 📋 Détail du parcours")
     
-    detail_table = agent_path[['timestamp', 'heure_texte', 'village', 'province', 'district', 'latitude', 'longitude']].copy()
-    detail_table['N°'] = range(1, len(detail_table) + 1)
-    detail_table = detail_table[['N°', 'timestamp', 'heure_texte', 'village', 'province', 'district', 'latitude', 'longitude']]
-    detail_table.columns = ['N°', 'Date/Heure', 'Heure', 'Village', 'Province', 'District', 'Latitude', 'Longitude']
+    display_cols = ['heure_texte', 'village', 'district', 'menage_servi', 
+                   'distance_depuis_precedent', 'distance_cumulee']
+    display_cols = [col for col in display_cols if col in agent_data.columns]
     
-    st.dataframe(
-        detail_table.style.set_properties(**{
-            'background-color': 'white',
-            'color': 'black',
-            'border-color': '#ddd'
-        }),
-        use_container_width=True,
-        height=400
+    display_df = agent_data[display_cols].copy()
+    display_df.columns = ['Heure', 'Village', 'District', 'Ménage servi', 
+                         'Distance (km)', 'Distance cumulée (km)']
+    
+    st.dataframe(display_df, use_container_width=True)
+    
+    # Graphique de progression
+    st.markdown("---")
+    st.markdown("### 📈 Progression de la distance")
+    
+    fig = px.line(
+        agent_data,
+        x=agent_data.index,
+        y='distance_cumulee',
+        labels={'x': 'Point d\'enquête', 'distance_cumulee': 'Distance cumulée (km)'},
+        title=f'Évolution de la distance parcourue - {selected_agent}'
+    )
+    fig.update_traces(line_color='#0066ff', line_width=3)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+################################################################################
+# 2. FONCTION page_data_quality() AMÉLIORÉE
+################################################################################
+
+def page_data_quality(data: pd.DataFrame):
+    """
+    Page d'analyse de qualité des données par agent - VERSION AMÉLIORÉE
+    
+    Nouvelles fonctionnalités :
+    - Analyse détaillée par agent enquêteur
+    - Détection des anomalies et incohérences
+    - Score de qualité multidimensionnel
+    - Comparaison entre agents
+    """
+    
+    st.markdown("## 🔍 Qualité des Données par Agent")
+    
+    if 'agent_name' not in data.columns:
+        st.error("❌ Colonne 'agent_name' manquante dans les données")
+        return
+    
+    # ========== CALCULS DES INDICATEURS DE QUALITÉ ==========
+    
+    def calculate_agent_quality(agent_df):
+        """Calcule les indicateurs de qualité pour un agent"""
+        total = len(agent_df)
+        
+        if total == 0:
+            return None
+        
+        # Indicateurs de complétude
+        completeness_coords = (
+            agent_df['latitude'].notna().sum() + agent_df['longitude'].notna().sum()
+        ) / (2 * total) * 100
+        
+        completeness_data = agent_df.notna().mean(axis=1).mean() * 100
+        
+        # Indicateurs de cohérence
+        coherence_servi = 0
+        if 'menage_servi' in agent_df.columns and 'nb_milda_recues' in agent_df.columns:
+            servis = agent_df[agent_df['menage_servi'] == 'Oui']
+            if len(servis) > 0:
+                coherence_servi = (servis['nb_milda_recues'].notna().sum() / len(servis)) * 100
+        
+        # Indicateurs de conformité
+        conformite = 0
+        if 'indic_correct' in agent_df.columns:
+            servis = agent_df[agent_df['menage_servi'] == 'Oui']
+            if len(servis) > 0:
+                conformite = (agent_df['indic_correct'].sum() / len(servis)) * 100
+        
+        # Détection d'anomalies GPS
+        anomalies_gps = 0
+        if 'latitude' in agent_df.columns and 'longitude' in agent_df.columns:
+            valid_coords = agent_df.dropna(subset=['latitude', 'longitude'])
+            if len(valid_coords) > 0:
+                # Vérifier les coordonnées dans les limites du Tchad
+                valid_tchad = (
+                    (valid_coords['latitude'] >= 7.5) & (valid_coords['latitude'] <= 23.5) &
+                    (valid_coords['longitude'] >= 13.5) & (valid_coords['longitude'] <= 24.0)
+                )
+                anomalies_gps = ((~valid_tchad).sum() / len(valid_coords)) * 100
+        
+        # Doublons temporels (enquêtes au même moment)
+        doublons_temps = 0
+        if 'timestamp' in agent_df.columns:
+            doublons_temps = (agent_df['timestamp'].duplicated().sum() / total) * 100
+        
+        # Vitesse de travail (enquêtes par heure)
+        vitesse_travail = 0
+        if 'timestamp' in agent_df.columns and len(agent_df) > 1:
+            duree_heures = (agent_df['timestamp'].max() - agent_df['timestamp'].min()).total_seconds() / 3600
+            if duree_heures > 0:
+                vitesse_travail = total / duree_heures
+        
+        # Score de qualité global (0-100)
+        score_qualite = (
+            completeness_data * 0.30 +
+            completeness_coords * 0.20 +
+            coherence_servi * 0.20 +
+            conformite * 0.20 +
+            (100 - anomalies_gps) * 0.10
+        )
+        
+        return {
+            'agent': agent_df['agent_name'].iloc[0],
+            'nb_enquetes': total,
+            'completeness_data': round(completeness_data, 1),
+            'completeness_coords': round(completeness_coords, 1),
+            'coherence_servi': round(coherence_servi, 1),
+            'conformite': round(conformite, 1),
+            'anomalies_gps': round(anomalies_gps, 1),
+            'doublons_temps': round(doublons_temps, 1),
+            'vitesse_travail': round(vitesse_travail, 2),
+            'score_qualite': round(score_qualite, 1)
+        }
+    
+    # Calcul pour tous les agents
+    quality_data = []
+    for agent in data['agent_name'].dropna().unique():
+        agent_df = data[data['agent_name'] == agent].copy()
+        quality_metrics = calculate_agent_quality(agent_df)
+        if quality_metrics:
+            quality_data.append(quality_metrics)
+    
+    quality_df = pd.DataFrame(quality_data)
+    
+    if len(quality_df) == 0:
+        st.warning("Aucune donnée de qualité calculable")
+        return
+    
+    # Trier par score de qualité
+    quality_df = quality_df.sort_values('score_qualité', ascending=False).reset_index(drop=True)
+    
+    # ========== AFFICHAGE DES RÉSULTATS ==========
+    
+    st.markdown("### 📊 Vue d'ensemble")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        score_moyen = quality_df['score_qualite'].mean()
+        st.metric(
+            "Score moyen de qualité",
+            f"{score_moyen:.1f}/100",
+            delta=None
+        )
+    
+    with col2:
+        meilleur_agent = quality_df.iloc[0]
+        st.metric(
+            "Meilleur agent",
+            meilleur_agent['agent'],
+            delta=f"{meilleur_agent['score_qualite']:.1f}/100"
+        )
+    
+    with col3:
+        agents_excellents = (quality_df['score_qualite'] >= 80).sum()
+        st.metric(
+            "Agents excellents",
+            f"{agents_excellents}/{len(quality_df)}",
+            delta=f"{(agents_excellents/len(quality_df)*100):.0f}%"
+        )
+    
+    with col4:
+        agents_problemes = (quality_df['score_qualite'] < 60).sum()
+        st.metric(
+            "Agents à améliorer",
+            f"{agents_problemes}/{len(quality_df)}",
+            delta=f"-{(agents_problemes/len(quality_df)*100):.0f}%" if agents_problemes > 0 else "0%"
+        )
+    
+    st.markdown("---")
+    
+    # ========== GRAPHIQUES ==========
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🎯 Score de qualité par agent")
+        
+        fig = px.bar(
+            quality_df,
+            x='agent',
+            y='score_qualite',
+            color='score_qualite',
+            color_continuous_scale=['#ef4444', '#f59e0b', '#10b981'],
+            labels={'agent': 'Agent', 'score_qualite': 'Score de qualité'},
+            text='score_qualite'
+        )
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig.update_layout(
+            xaxis_tickangle=-45,
+            showlegend=False,
+            height=400
+        )
+        fig.add_hline(y=80, line_dash="dash", line_color="green", annotation_text="Objectif 80")
+        fig.add_hline(y=60, line_dash="dash", line_color="orange", annotation_text="Seuil 60")
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.markdown("#### 📈 Répartition des scores")
+        
+        # Catégoriser les scores
+        quality_df['categorie'] = pd.cut(
+            quality_df['score_qualite'],
+            bins=[0, 60, 80, 100],
+            labels=['À améliorer (<60)', 'Acceptable (60-80)', 'Excellent (>80)']
+        )
+        
+        categorie_counts = quality_df['categorie'].value_counts()
+        
+        fig = px.pie(
+            values=categorie_counts.values,
+            names=categorie_counts.index,
+            color=categorie_counts.index,
+            color_discrete_map={
+                'À améliorer (<60)': '#ef4444',
+                'Acceptable (60-80)': '#f59e0b',
+                'Excellent (>80)': '#10b981'
+            }
+        )
+        fig.update_traces(textposition='inside', textinfo='percent+label')
+        fig.update_layout(height=400)
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # ========== ANALYSE DÉTAILLÉE PAR DIMENSION ==========
+    
+    st.markdown("### 🔬 Analyse multidimensionnelle")
+    
+    # Radar chart pour comparaison
+    selected_agents_radar = st.multiselect(
+        "Sélectionner des agents à comparer (max 5)",
+        quality_df['agent'].tolist(),
+        default=quality_df['agent'].head(3).tolist(),
+        max_selections=5
     )
     
-    # 7. Export des données du parcours
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Export CSV
-        csv = detail_table.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button(
-            label="📥 Télécharger le parcours (CSV)",
-            data=csv,
-            file_name=f"parcours_{selected_agent}_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
-        )
-    
-    with col2:
-        # Export JSON
-        json_data = detail_table.to_json(orient='records', force_ascii=False, indent=2)
-        st.download_button(
-            label="📥 Télécharger le parcours (JSON)",
-            data=json_data,
-            file_name=f"parcours_{selected_agent}_{datetime.now().strftime('%Y%m%d')}.json",
-            mime="application/json"
-        )
-
+    if selected_agents_radar:
+        radar_data = quality_df[quality_df['agent'].isin(selected_agents_radar)]
         
-def page_data_quality(data: pd.DataFrame):
-    st.markdown("## 🛡️ Contrôle Qualité (Data Quality Assurance)")
-    
-    # Préparation des données temporelles
-    df_qc = data.copy()
-    df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
-    
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("📍 Doublons Géographiques")
-        # Même endroit, même jour = suspect
-        dups = df_qc.duplicated(subset=['latitude', 'longitude', 'date_enquete'], keep=False)
-        n_dups = dups.sum()
-        if n_dups > 0:
-            st.error(f"🚨 {n_dups} entrées suspectes détectées (Même GPS et même date).")
-            st.dataframe(df_qc[dups][['agent_name', 'village', 'date_enquete']])
-        else:
-            st.success("✅ Aucun doublon géographique détecté.")
-
-    with col2:
-        st.subheader("⏱️ Cadence des Interviews")
-        # Vérifier si un agent fait des interviews trop vite (< 10 minutes)
-        if 'timestamp' in df_qc.columns:
-            df_qc = df_qc.sort_values(['agent_name', 'timestamp'])
-            df_qc['delai'] = df_qc.groupby('agent_name')['timestamp'].diff().dt.total_seconds() / 60
+        fig = go.Figure()
+        
+        dimensions = ['completeness_data', 'completeness_coords', 'coherence_servi', 
+                     'conformite', 'score_qualite']
+        labels = ['Complétude données', 'Complétude GPS', 'Cohérence', 'Conformité', 'Score global']
+        
+        for _, row in radar_data.iterrows():
+            values = [row[dim] for dim in dimensions]
+            values.append(values[0])  # Fermer le polygone
             
-            fast_surveys = df_qc[df_qc['delai'] < 10]
-            if not fast_surveys.empty:
-                st.warning(f"⚠️ {len(fast_surveys)} interviews réalisées en moins de 10 min.")
-                st.dataframe(fast_surveys[['agent_name', 'village', 'delai']])
-            else:
-                st.success("✅ Rythme d'enquête réaliste.")
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=labels + [labels[0]],
+                fill='toself',
+                name=row['agent']
+            ))
+        
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(visible=True, range=[0, 100])
+            ),
+            showlegend=True,
+            height=500,
+            title="Comparaison multidimensionnelle"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # ========== TABLEAU DÉTAILLÉ ==========
+    
+    st.markdown("### 📋 Tableau détaillé de qualité")
+    
+    display_df = quality_df[[
+        'agent', 'nb_enquetes', 'score_qualite', 'completeness_data',
+        'completeness_coords', 'coherence_servi', 'conformite', 
+        'anomalies_gps', 'vitesse_travail'
+    ]].copy()
+    
+    display_df.columns = [
+        'Agent', 'Nb enquêtes', 'Score qualité', 'Complétude (%)',
+        'GPS complet (%)', 'Cohérence (%)', 'Conformité (%)',
+        'Anomalies GPS (%)', 'Vitesse (enq/h)'
+    ]
+    
+    # Appliquer un style conditionnel
+    def color_score(val):
+        if val >= 80:
+            color = '#d1fae5'
+        elif val >= 60:
+            color = '#fef3c7'
+        else:
+            color = '#fee2e2'
+        return f'background-color: {color}'
+    
+    styled_df = display_df.style.applymap(
+        color_score,
+        subset=['Score qualité']
+    )
+    
+    st.dataframe(styled_df, use_container_width=True)
+    
+    # ========== ALERTES ET RECOMMANDATIONS ==========
+    
+    st.markdown("---")
+    st.markdown("### 🚨 Alertes et recommandations")
+    
+    # Agents avec problèmes
+    agents_problemes = quality_df[quality_df['score_qualite'] < 60]
+    
+    if len(agents_problemes) > 0:
+        st.error(f"⚠️ **{len(agents_problemes)} agent(s)** nécessite(nt) une attention particulière")
+        
+        for _, agent in agents_problemes.iterrows():
+            with st.expander(f"🔴 {agent['agent']} - Score: {agent['score_qualite']:.1f}/100"):
+                recommendations = []
+                
+                if agent['completeness_data'] < 70:
+                    recommendations.append("📝 **Complétude insuffisante** : Vérifier que tous les champs sont remplis")
+                
+                if agent['completeness_coords'] < 70:
+                    recommendations.append("📍 **GPS incomplet** : S'assurer que le GPS est activé")
+                
+                if agent['anomalies_gps'] > 10:
+                    recommendations.append("🗺️ **Anomalies GPS détectées** : Vérifier la calibration du GPS")
+                
+                if agent['coherence_servi'] < 70:
+                    recommendations.append("🔢 **Incohérences dans les données** : Revoir la logique de saisie")
+                
+                if agent['conformite'] < 60:
+                    recommendations.append("⚖️ **Non-conformité élevée** : Formation sur les normes de distribution")
+                
+                for rec in recommendations:
+                    st.markdown(f"- {rec}")
+    
+    else:
+        st.success("✅ Tous les agents ont un score de qualité satisfaisant (≥60)")
+    
+    # Meilleurs agents
+    agents_excellents = quality_df[quality_df['score_qualite'] >= 80]
+    
+    if len(agents_excellents) > 0:
+        st.success(f"🌟 **{len(agents_excellents)} agent(s) excellent(s)** (score ≥ 80)")
+        
+        with st.expander("Voir les agents excellents"):
+            for _, agent in agents_excellents.iterrows():
+                st.markdown(f"- **{agent['agent']}** : {agent['score_qualite']:.1f}/100")
 
-    st.divider()
-    st.subheader("📊 Complétude des colonnes clés")
-    missing = data.isnull().mean() * 100
-    st.bar_chart(missing)
+
+################################################################################
+# 3. GÉNÉRATION AUTOMATIQUE DE RAPPORT (Format Word)
+################################################################################
+
+def create_table(document, data, headers):
+    """Crée un tableau formaté dans le document Word"""
+    table = document.add_table(rows=1, cols=len(headers))
+    table.style = 'Light Grid Accent 1'
+    
+    # En-têtes
+    hdr_cells = table.rows[0].cells
+    for i, header in enumerate(headers):
+        hdr_cells[i].text = header
+        # Formater l'en-tête en gras
+        for paragraph in hdr_cells[i].paragraphs:
+            for run in paragraph.runs:
+                run.font.bold = True
+    
+    # Données
+    for row_data in data:
+        row_cells = table.add_row().cells
+        for i, value in enumerate(row_data):
+            row_cells[i].text = str(value)
+    
+    return table
+
+
+def add_chart_placeholder(document, title):
+    """Ajoute un espace réservé pour un graphique"""
+    p = document.add_paragraph()
+    p.add_run(f"[GRAPHIQUE: {title}]").italic = True
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+
+def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
+    """
+    Génère un rapport automatique au format Word
+    Structure inspirée de Analyse_denombrement_pilote.docx
+    
+    Returns:
+        io.BytesIO: Document Word en mémoire
+    """
+    
+    if not DOCX_AVAILABLE:
+        st.error("❌ Bibliothèque python-docx non disponible. Installez-la avec: pip install python-docx")
+        return None
+    
+    # Créer le document
+    doc = Document()
+    
+    # ========== PAGE DE TITRE ==========
+    doc.add_heading('Analyse du dénombrement-distribution MILDA', 0)
+    doc.add_heading('Campagne de Distribution de Masse 2026', level=2)
+    
+    p = doc.add_paragraph()
+    p.add_run(f'Rapport généré le : {datetime.now().strftime("%d/%m/%Y à %H:%M")}\n').bold = True
+    p.add_run(f'Période d\'analyse : ')
+    if 'date_enquete' in data.columns:
+        date_min = data['date_enquete'].min().strftime('%d/%m/%Y')
+        date_max = data['date_enquete'].max().strftime('%d/%m/%Y')
+        p.add_run(f'{date_min} au {date_max}')
+    
+    doc.add_page_break()
+    
+    # ========== CARACTÉRISTIQUES DES MÉNAGES ==========
+    doc.add_heading('Caractéristiques', level=1)
+    
+    # Tableau 1: Proportion des chefs de ménage
+    doc.add_heading('Tableau : Proportion des chefs des ménages enquêtés', level=2)
+    
+    if 'menage_chef' in data.columns or any('chef' in col.lower() for col in data.columns):
+        # Trouver la colonne appropriée
+        chef_col = next((col for col in data.columns if 'chef' in col.lower()), None)
+        if chef_col:
+            chef_data = data[chef_col].value_counts()
+            total = len(data)
+            
+            table_data = []
+            for value, count in chef_data.items():
+                freq = round(count / total * 100, 2)
+                table_data.append([value, count, freq])
+            table_data.append(['Total', total, 100.00])
+            
+            create_table(doc, table_data, ['Êtes-vous le Chef de ce ménage ?', 'Effectif', 'Fréquence'])
+    
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    
+    doc.add_page_break()
+    
+    # ========== INDICATEURS DE QUALITÉ ==========
+    doc.add_heading('Indicateurs de qualité du dénombrement-distribution', level=1)
+    
+    # Calcul des métriques globales
+    total_menages = len(data)
+    menages_servis = (data['indic_servi'] == 1).sum()
+    menages_correct = (data['indic_correct'] == 1).sum()
+    menages_marques = (data['indic_marque'] == 1).sum()
+    menages_informes = (data['indic_info'] == 1).sum()
+    
+    pct_servis = round(100 * menages_servis / total_menages, 1) if total_menages > 0 else 0
+    pct_correct = round(100 * menages_correct / menages_servis, 1) if menages_servis > 0 else 0
+    pct_marques = round(100 * menages_marques / menages_servis, 1) if menages_servis > 0 else 0
+    pct_informes = round(100 * menages_informes / total_menages, 1) if total_menages > 0 else 0
+    
+    # Résumé textuel
+    doc.add_heading('Résumé global', level=2)
+    p = doc.add_paragraph()
+    p.add_run(f'Sur les {total_menages} ménages enquêtés :\n')
+    p.add_run(f'• {pct_servis}% ont été servis en MILDA\n')
+    p.add_run(f'• {pct_correct}% ont reçu le bon nombre de MILDA selon la norme\n')
+    p.add_run(f'• {pct_marques}% des ménages servis ont été marqués\n')
+    p.add_run(f'• {pct_informes}% ont été informés sur l\'utilisation correcte des MILDA\n')
+    
+    doc.add_heading('Ménages servis en MILDA', level=2)
+    add_chart_placeholder(doc, 'Pourcentage des ménages servis en MILDA par Centre de Santé')
+    
+    # Tableau par Centre de Santé
+    if 'centre_sante' in data.columns:
+        doc.add_heading('Tableau : Pourcentage des ménages servis par Centre de Santé', level=2)
+        
+        cs_stats = data.groupby('centre_sante').agg(
+            total=('centre_sante', 'count'),
+            servis=('indic_servi', 'sum'),
+            correct=('indic_correct', 'sum')
+        ).reset_index()
+        
+        cs_stats['pct_servis'] = round(100 * cs_stats['servis'] / cs_stats['total'], 1)
+        cs_stats['pct_correct'] = round(100 * cs_stats['correct'] / cs_stats['servis'], 1)
+        
+        table_data = []
+        for _, row in cs_stats.iterrows():
+            table_data.append([
+                row['centre_sante'],
+                row['total'],
+                row['servis'],
+                row['pct_servis'],
+                row['correct'],
+                row['pct_correct']
+            ])
+        
+        # Total
+        table_data.append([
+            'Total',
+            cs_stats['total'].sum(),
+            cs_stats['servis'].sum(),
+            round(100 * cs_stats['servis'].sum() / cs_stats['total'].sum(), 1),
+            cs_stats['correct'].sum(),
+            round(100 * cs_stats['correct'].sum() / cs_stats['servis'].sum(), 1)
+        ])
+        
+        create_table(doc, table_data, [
+            'CS',
+            'Ménages dénombrés',
+            'Ménages servis',
+            '% servis',
+            'Correctement servis',
+            '% correct'
+        ])
+    
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    
+    doc.add_page_break()
+    
+    # ========== ANALYSE DE LA DISTRIBUTION ==========
+    doc.add_heading('Analyse de la distribution des moustiquaires', level=1)
+    
+    # Calcul des écarts
+    if 'ecart_distribution' in data.columns:
+        distribution_data = data[data['menage_servi'] == 'Oui'].copy()
+        
+        moins_norme = (distribution_data['ecart_distribution'] < 0).sum()
+        norme_ok = (distribution_data['ecart_distribution'] == 0).sum()
+        plus_norme = (distribution_data['ecart_distribution'] > 0).sum()
+        total_dist = len(distribution_data)
+        
+        pct_moins = round(100 * moins_norme / total_dist, 1) if total_dist > 0 else 0
+        pct_ok = round(100 * norme_ok / total_dist, 1) if total_dist > 0 else 0
+        pct_plus = round(100 * plus_norme / total_dist, 1) if total_dist > 0 else 0
+        
+        p = doc.add_paragraph()
+        p.add_run(
+            f'Il ressort que {pct_moins}% des ménages ont reçu des moustiquaires en moins selon la norme prévue '
+            f'et {pct_plus}% ont reçu des moustiquaires en plus que ce qui était prévu. '
+        )
+        
+        doc.add_heading('Tableau : Répartition selon la norme', level=2)
+        
+        table_data = [
+            ['Moins que la norme', moins_norme, pct_moins],
+            ['Norme respectée', norme_ok, pct_ok],
+            ['Plus que la norme', plus_norme, pct_plus],
+            ['Total', total_dist, 100.0]
+        ]
+        
+        create_table(doc, table_data, ['Nombre des moustiquaires reçues', 'Effectif', 'Fréquence (%)'])
+        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    
+    doc.add_page_break()
+    
+    # ========== MARQUAGE DES MÉNAGES ==========
+    doc.add_heading('Marquage des ménages', level=1)
+    
+    add_chart_placeholder(doc, 'Pourcentage de ménages avec marquage par CS')
+    
+    if 'centre_sante' in data.columns:
+        marquage_stats = data[data['menage_servi'] == 'Oui'].groupby('centre_sante').agg(
+            servis=('menage_servi', 'count'),
+            marques=('indic_marque', 'sum')
+        ).reset_index()
+        
+        marquage_stats['pct_marques'] = round(100 * marquage_stats['marques'] / marquage_stats['servis'], 1)
+        
+        table_data = []
+        for _, row in marquage_stats.iterrows():
+            table_data.append([
+                row['centre_sante'],
+                row['servis'],
+                row['marques'],
+                row['pct_marques']
+            ])
+        
+        table_data.append([
+            'Total',
+            marquage_stats['servis'].sum(),
+            marquage_stats['marques'].sum(),
+            round(100 * marquage_stats['marques'].sum() / marquage_stats['servis'].sum(), 1)
+        ])
+        
+        create_table(doc, table_data, [
+            'CS',
+            'Ménages servis',
+            'Ménages marqués',
+            '% marqués'
+        ])
+        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    
+    doc.add_page_break()
+    
+    # ========== SENSIBILISATION ==========
+    doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
+    
+    if 'centre_sante' in data.columns:
+        sensi_stats = data.groupby('centre_sante').agg(
+            total=('centre_sante', 'count'),
+            informes=('indic_info', 'sum')
+        ).reset_index()
+        
+        sensi_stats['pct_informes'] = round(100 * sensi_stats['informes'] / sensi_stats['total'], 1)
+        
+        table_data = []
+        for _, row in sensi_stats.iterrows():
+            table_data.append([
+                row['centre_sante'],
+                row['total'],
+                row['informes'],
+                row['pct_informes']
+            ])
+        
+        table_data.append([
+            'Total',
+            sensi_stats['total'].sum(),
+            sensi_stats['informes'].sum(),
+            round(100 * sensi_stats['informes'].sum() / sensi_stats['total'].sum(), 1)
+        ])
+        
+        create_table(doc, table_data, [
+            'CS',
+            'Ménages total',
+            'Ménages informés',
+            '% informés'
+        ])
+        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    
+    doc.add_page_break()
+    
+    # ========== INFORMATION SUR LA CAMPAGNE ==========
+    doc.add_heading('Information de la campagne de distribution', level=1)
+    
+    # Tableau global
+    if 'sensibilise' in data.columns or any('inform' in col.lower() for col in data.columns):
+        info_col = 'sensibilise'
+        if info_col in data.columns:
+            info_counts = data[info_col].value_counts()
+            total = len(data)
+            
+            table_data = []
+            for value, count in info_counts.items():
+                freq = round(count / total * 100, 2)
+                table_data.append([value, count, freq])
+            table_data.append(['Total', total, 100.00])
+            
+            doc.add_heading('Tableau : Proportion des ménages informés sur la campagne', level=2)
+            create_table(doc, table_data, [
+                'Étiez-vous informé de la campagne ?',
+                'Effectif',
+                'Fréquence'
+            ])
+            
+            doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    
+    # ========== CONCLUSION ==========
+    doc.add_page_break()
+    doc.add_heading('Conclusion', level=1)
+    
+    p = doc.add_paragraph()
+    p.add_run('Ce rapport présente une analyse complète du dénombrement-distribution de la Campagne de Distribution de Masse des MILDA 2026.\n\n')
+    
+    # Points clés
+    p.add_run('Points clés :\n').bold = True
+    p.add_run(f'• Couverture globale : {pct_servis}%\n')
+    p.add_run(f'• Conformité : {pct_correct}%\n')
+    p.add_run(f'• Marquage : {pct_marques}%\n')
+    p.add_run(f'• Sensibilisation : {pct_informes}%\n\n')
+    
+    # Recommandations
+    p.add_run('Recommandations :\n').bold = True
+    if pct_servis < 80:
+        p.add_run('• Renforcer la couverture dans les zones sous-desservies\n')
+    if pct_correct < 80:
+        p.add_run('• Améliorer le respect des normes de distribution\n')
+    if pct_marques < 70:
+        p.add_run('• Intensifier le marquage systématique des ménages\n')
+    if pct_informes < 70:
+        p.add_run('• Renforcer les activités de sensibilisation\n')
+    
+    # Sauvegarder en mémoire
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    
+    return output
+
+
+################################################################################
+# FONCTION POUR TÉLÉCHARGER LE RAPPORT
+################################################################################
+
+def download_automatic_report_button(data: pd.DataFrame, tables: dict):
+    """Crée un bouton de téléchargement pour le rapport automatique"""
+    
+    st.markdown("---")
+    st.markdown("### 📥 Téléchargement du rapport")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        st.info(
+            "📄 Ce rapport contient une analyse complète selon la structure standard : "
+            "caractéristiques, indicateurs de qualité, analyse de distribution, "
+            "marquage, sensibilisation et recommandations."
+        )
+    
+    with col2:
+        if st.button("🔄 Générer le rapport", use_container_width=True):
+            with st.spinner("Génération du rapport en cours..."):
+                report_file = generate_automatic_report(data, tables)
+                
+                if report_file:
+                    filename = f"Rapport_MILDA_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+                    
+                    st.download_button(
+                        label="📥 Télécharger le rapport Word",
+                        data=report_file,
+                        file_name=filename,
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True
+                    )
+                    
+                    st.success("✅ Rapport généré avec succès !")
+                else:
+                    st.error("❌ Erreur lors de la génération du rapport")
+
     
 ################################################################################
 # APPLICATION PRINCIPALE
