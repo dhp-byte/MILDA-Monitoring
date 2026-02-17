@@ -1304,17 +1304,24 @@ def page_agent_tracking(data: pd.DataFrame):
     # Conversion de la date/heure
     if 'date_enquete' in df_track.columns:
         df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+    else:
+        # Évite les erreurs quand la colonne n'est pas présente dans les données source
+        df_track['date_enquete'] = pd.NaT
     
     # Créer un timestamp pour le tri
     if 'heure_interview' in df_track.columns:
         df_track['timestamp'] = pd.to_datetime(
             df_track['date_enquete'].astype(str) + ' ' + df_track['heure_interview'].astype(str),
-            errors='coerce'
-        )
+            errors='coerce',
+            utc=True
+        ).dt.tz_convert(None)
     elif 'date_enquete' in df_track.columns:
-        df_track['timestamp'] = df_track['date_enquete']
+        df_track['timestamp'] = pd.to_datetime(df_track['date_enquete'], errors='coerce', utc=True).dt.tz_convert(None)
     else:
         df_track['timestamp'] = pd.Timestamp.now()
+
+    # Force un format datetime homogène pour les opérations .dt
+    df_track['timestamp'] = pd.to_datetime(df_track['timestamp'], errors='coerce', utc=True).dt.tz_convert(None)
     
     # Trier par agent et timestamp
     df_track = df_track.sort_values(['agent_name', 'timestamp']).reset_index(drop=True)
