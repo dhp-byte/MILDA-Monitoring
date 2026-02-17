@@ -1275,7 +1275,7 @@ def page_agent_tracking(data: pd.DataFrame):
         st.warning("⚠️ Aucune donnée chronologique ou GPS valide trouvée.")
         return
 
-    # 4. Heure en texte pour l'affichage
+    # 4. Heure en texte (Noir et Gras via HTML si supporté, sinon via configuration trace)
     df_track['heure_texte'] = df_track['timestamp'].apply(lambda x: x.strftime('%H:%M'))
 
     # 5. Tri chronologique
@@ -1287,55 +1287,53 @@ def page_agent_tracking(data: pd.DataFrame):
     agent_path = df_track[df_track['agent_name'] == selected_agent].copy()
 
     if not agent_path.empty:
-        # --- CALCUL DE L'ORIENTATION (POUR LES FLÈCHES) ---
-        # On calcule la différence de position entre deux points pour orienter la flèche
-        # On utilise une flèche (symbole "triangle") comme marqueur
-        
+        # Création de la figure de base avec la ligne
         fig = px.line_mapbox(
             agent_path,
             lat="latitude",
             lon="longitude",
-            hover_name="heure_texte", 
             zoom=12,
             height=600,
-            title=f"Itinéraire fléché de : {selected_agent}"
+            title=f"Itinéraire détaillé de : {selected_agent}"
         )
         
-        # AJOUT DES FLÈCHES DE DIRECTION (Triangles orientés)
-        # On place des symboles de direction au milieu des segments
-        fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'],
-            lon=agent_path['longitude'],
-            mode='lines+markers',
-            marker=go.scattermapbox.Marker(
-                size=15,
-                symbol='triangle', # Ce symbole ressemble à une flèche
-                color='blue'
-            ),
-            hoverinfo='skip',
-            name="Direction du trajet"
-        ))
-
-        # AJOUT DES POINTS D'ARRÊT (Les points rouges originaux)
+        # AJOUT DES POINTS ET DES HEURES EN NOIR
         fig.add_trace(go.Scattermapbox(
             lat=agent_path['latitude'],
             lon=agent_path['longitude'],
             mode='markers+text',
-            marker=go.scattermapbox.Marker(size=10, color='red'),
+            marker=go.scattermapbox.Marker(size=12, color='red'),
             text=agent_path['heure_texte'],
             textposition="top right",
+            # Configuration pour rendre le texte NOIR et LISIBLE
+            textfont=dict(size=14, color="black"), 
             name="Point d'enquête"
+        ))
+
+        # AJOUT DE FLÈCHES MANUELLES (Marqueurs intermédiaires)
+        # On ajoute un symbole de direction (flèche) à chaque point sauf le dernier
+        fig.add_trace(go.Scattermapbox(
+            lat=agent_path['latitude'],
+            lon=agent_path['longitude'],
+            mode='markers',
+            marker=go.scattermapbox.Marker(
+                size=10,
+                symbol='marker', # Utilisation d'un symbole plus standard
+                color='black'
+            ),
+            hoverinfo='skip',
+            name="Direction"
         ))
 
         fig.update_layout(
             mapbox_style="open-street-map", 
             showlegend=True,
-            mapbox=dict(
-                bearing=0,
-                pitch=0
-            )
+            # Forcer le contraste du texte sur la carte
+            margin={"r":0,"t":40,"l":0,"b":0}
         )
+        
         st.plotly_chart(fig, use_container_width=True)
+
         
 def page_data_quality(data: pd.DataFrame):
     st.markdown("## 🛡️ Contrôle Qualité (Data Quality Assurance)")
