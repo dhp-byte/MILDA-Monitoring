@@ -44,14 +44,14 @@ except ImportError:
 
 # Configuration de la page
 st.set_page_config(
-    page_title="MILDA Dashboard Premium",
+    page_title="MILDA Dashboard",
     page_icon="🦟",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
         'Get Help': 'https://www.example.com/help',
         'Report a bug': "https://www.example.com/bug",
-        'About': "# MILDA Dashboard v2.0\nTableau de bord avancé pour le monitorage des moustiquaires"
+        'About': "# MILDA Dashboard v1.0\nTableau de bord pour le monitorage de la distribution des moustiquaires au Tchad "
     }
 )
 
@@ -698,9 +698,9 @@ def render_header():
     """Affiche l'en-tête principal"""
     st.markdown("""
         <div class="main-header">
-            <h1>🦟 MILDA Dashboard Premium</h1>
+            <h1>🦟 MILDA Dashboard</h1>
             <p style="font-size: 1.2rem; margin-top: 0.5rem;">
-                Système avancé de monitorage et d'analyse des moustiquaires
+                Système de monitorage et d'analyse de la distribution des moustiquaires au Tchad 2026
             </p>
         </div>
     """, unsafe_allow_html=True)
@@ -1272,11 +1272,21 @@ def main():
         )
         
         if uploaded_file:
-            sheet_name = st.text_input(
-                "📄 Nom de la feuille (optionnel)",
-                value="",
-                help="Laisser vide pour utiliser la première feuille"
-            )
+            # 1. Lire le fichier Excel pour extraire les noms de feuilles
+            try:
+                xls = pd.ExcelFile(uploaded_file)
+                sheet_names = xls.sheet_names
+                
+                # 2. Créer la liste déroulante (selectbox)
+                sheet_name = st.selectbox(
+                    "📄 Choisir la feuille de données",
+                    options=sheet_names,
+                    index=0,  # Par défaut, sélectionne la première feuille
+                    help="Sélectionnez la feuille qui contient les données d'enquête"
+                )
+            except Exception as e:
+                st.error(f"Erreur lors de la lecture des feuilles : {e}")
+                sheet_name = None
         
         st.markdown("---")
         
@@ -1383,9 +1393,9 @@ def main():
     st.markdown("---")
     st.markdown(f"""
         <div style='text-align: center; color: #666; padding: 20px;'>
-            <p><strong>🦟 MILDA Dashboard Premium v2.0</strong></p>
+            <p><strong>🦟 MILDA Dashboard v1.0</strong></p>
             <p>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}</p>
-            <p style='font-size: 0.9rem;'>Système avancé de monitorage et d'analyse des moustiquaires</p>
+            <p style='font-size: 0.9rem;'>Système de monitorage et d'analyse de la distribution des moustiquaires</p>
         </div>
     """, unsafe_allow_html=True)
 
