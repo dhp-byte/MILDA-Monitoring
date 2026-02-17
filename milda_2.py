@@ -1307,6 +1307,18 @@ def page_agent_tracking(data: pd.DataFrame):
     else:
         # Évite les erreurs quand la colonne n'est pas présente dans les données source
         df_track['date_enquete'] = pd.NaT
+
+    # Créer un timestamp pour le tri (sans reconversions répétées)
+    if 'heure_interview' in df_track.columns:
+        heure_series = df_track['heure_interview'].fillna('').astype(str).str.strip()
+        date_str = df_track['date_enquete'].dt.strftime('%Y-%m-%d').fillna('')
+        datetime_str = (date_str + ' ' + heure_series).str.strip()
+        df_track['timestamp'] = pd.to_datetime(datetime_str, errors='coerce')
+    else:
+        df_track['timestamp'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+
+    # Force un format datetime homogène pour les opérations .dt
+    df_track['timestamp'] = pd.to_datetime(df_track['timestamp'], errors='coerce')
     
     # Créer un timestamp pour le tri
     if 'heure_interview' in df_track.columns:
