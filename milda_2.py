@@ -1252,6 +1252,8 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     st.dataframe(summary_df, use_container_width=True)
 
 def page_agent_tracking(data: pd.DataFrame):
+    """Page de suivi du parcours des agents avec visualisation satellite"""
+    
     st.markdown("## 🏃 Suivi du parcours des agents")
     
     df_track = data.copy()
@@ -1275,64 +1277,338 @@ def page_agent_tracking(data: pd.DataFrame):
         st.warning("⚠️ Aucune donnée chronologique ou GPS valide trouvée.")
         return
 
-    # 4. Heure en texte (Noir et Gras via HTML si supporté, sinon via configuration trace)
+    # 4. Heure en texte
     df_track['heure_texte'] = df_track['timestamp'].apply(lambda x: x.strftime('%H:%M'))
 
     # 5. Tri chronologique
     df_track = df_track.sort_values(['agent_name', 'timestamp'])
 
-    # 6. Sélection
-    agents = sorted(df_track['agent_name'].unique())
-    selected_agent = st.selectbox("Sélectionner un enquêteur", agents)
+    # 6. Sélection de l'agent
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        agents = sorted(df_track['agent_name'].unique())
+        selected_agent = st.selectbox("🔍 Sélectionner un enquêteur", agents)
+    
+    with col2:
+        map_style = st.selectbox(
+            "🗺️ Style de carte",
+            ["Satellite", "Terrain", "Standard"],
+            help="Choisissez le style d'affichage de la carte"
+        )
+    
     agent_path = df_track[df_track['agent_name'] == selected_agent].copy()
 
-    if not agent_path.empty:
-        # Création de la figure de base avec la ligne
-        fig = px.line_mapbox(
-            agent_path,
-            lat="latitude",
-            lon="longitude",
-            zoom=12,
-            height=600,
-            title=f"Itinéraire détaillé de : {selected_agent}"
-        )
+    if agent_path.empty:
+        st.warning(f"Aucune donnée pour l'agent {selected_agent}")
+        return
+    
+    # Calcul des statistiques du parcours
+    st.markdown("---")
+    st.markdown("### 📊 Statistiques du parcours")
+    
+    # Calcul de la distance totale (approximation)
+    def haversine_distance(lat1, lon1, lat2, lon2):
+        """Calcule la distance entre deux points GPS en km"""
+        from math import radians, cos, sin, asin, sqrt
         
-        # AJOUT DES POINTS ET DES HEURES EN NOIR
+        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a))
+        km = 6371 * c
+        return km
+    
+    total_distance = 0
+    for i in range(len(agent_path) - 1):
+        lat1 = agent_path.iloc[i]['latitude']
+        lon1 = agent_path.iloc[i]['longitude']
+        lat2 = agent_path.iloc[i+1]['latitude']
+        lon2 = agent_path.iloc[i+1]['longitude']
+        total_distance += haversine_distance(lat1, lon1, lat2, lon2)
+    
+    # Durée totale
+    duree = agent_path['timestamp'].max() - agent_path['timestamp'].min()
+    heures = duree.total_seconds() / 3600
+    
+    # Vitesse moyenne
+    vitesse_moy = total_distance / heures if heures > 0 else 0
+    
+    # Affichage des statistiques
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <p class="kpi-label">Points d'enquête</p>
+                <p class="kpi-value">{len(agent_path)}</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <p class="kpi-label">Distance totale</p>
+                <p class="kpi-value">{total_distance:.2f} km</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <p class="kpi-label">Durée totale</p>
+                <p class="kpi-value">{int(heures)}h {int((heures % 1) * 60)}min</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+            <div class="kpi-card">
+                <p class="kpi-label">Vitesse moyenne</p>
+                <p class="kpi-value">{vitesse_moy:.1f} km/h</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Création de la carte avec le style sélectionné
+    st.markdown(f"### 🗺️ Carte du parcours - {selected_agent}")
+    
+    # Mapping des styles de carte
+    style_mapping = {
+        "Satellite": "satellite-streets",
+        "Terrain": "outdoors",
+        "Standard": "open-street-map"
+    }
+    
+    mapbox_style = style_mapping.get(map_style, "open-street-map")
+    
+    # Création de la figure avec la ligne de parcours
+    fig = go.Figure()
+    
+    # 1. Ligne de parcours (en bleu)
+    fig.add_trace(go.Scattermapbox(
+        lat=agent_path['latitude'],
+        lon=agent_path['longitude'],
+        mode='lines',
+        line=dict(width=3, color='blue'),
+        name='Parcours',
+        hoverinfo='skip'
+    ))
+    
+    # 2. Points de départ et d'arrivée (marqueurs spéciaux)
+    # Point de départ (vert)
+    fig.add_trace(go.Scattermapbox(
+        lat=[agent_path.iloc[0]['latitude']],
+        lon=[agent_path.iloc[0]['longitude']],
+        mode='markers+text',
+        marker=go.scattermapbox.Marker(
+            size=20,
+            color='green',
+            symbol='marker'
+        ),
+        text=['DÉPART'],
+        textposition="top center",
+        textfont=dict(size=12, color="white", family="Arial Black"),
+        name='Départ',
+        hovertemplate='<b>Point de départ</b><br>Heure: %{customdata}<extra></extra>',
+        customdata=[agent_path.iloc[0]['heure_texte']]
+    ))
+    
+    # Point d'arrivée (rouge)
+    fig.add_trace(go.Scattermapbox(
+        lat=[agent_path.iloc[-1]['latitude']],
+        lon=[agent_path.iloc[-1]['longitude']],
+        mode='markers+text',
+        marker=go.scattermapbox.Marker(
+            size=20,
+            color='red',
+            symbol='marker'
+        ),
+        text=['ARRIVÉE'],
+        textposition="top center",
+        textfont=dict(size=12, color="white", family="Arial Black"),
+        name='Arrivée',
+        hovertemplate='<b>Point d\'arrivée</b><br>Heure: %{customdata}<extra></extra>',
+        customdata=[agent_path.iloc[-1]['heure_texte']]
+    ))
+    
+    # 3. Points intermédiaires avec heures
+    if len(agent_path) > 2:
+        intermediate = agent_path.iloc[1:-1]
+        
         fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'],
-            lon=agent_path['longitude'],
+            lat=intermediate['latitude'],
+            lon=intermediate['longitude'],
             mode='markers+text',
-            marker=go.scattermapbox.Marker(size=12, color='red'),
-            text=agent_path['heure_texte'],
-            textposition="top right",
-            # Configuration pour rendre le texte NOIR et LISIBLE
-            textfont=dict(size=14, color="black"), 
-            name="Point d'enquête"
-        ))
-
-        # AJOUT DE FLÈCHES MANUELLES (Marqueurs intermédiaires)
-        # On ajoute un symbole de direction (flèche) à chaque point sauf le dernier
-        fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'],
-            lon=agent_path['longitude'],
-            mode='markers',
             marker=go.scattermapbox.Marker(
-                size=10,
-                symbol='marker', # Utilisation d'un symbole plus standard
-                color='black'
+                size=14,
+                color='orange',
+                symbol='circle'
             ),
-            hoverinfo='skip',
-            name="Direction"
+            text=intermediate['heure_texte'],
+            textposition="top center",
+            textfont=dict(
+                size=11,
+                color="black",
+                family="Arial Black"
+            ),
+            name='Points d\'enquête',
+            hovertemplate='<b>Enquête</b><br>Heure: %{text}<br>Village: %{customdata}<extra></extra>',
+            customdata=intermediate['village'].fillna('N/A')
         ))
-
+    
+    # 4. Annotations avec fond blanc pour les heures (amélioration visibilité)
+    annotations = []
+    for idx, row in agent_path.iterrows():
+        annotations.append({
+            'lat': row['latitude'],
+            'lon': row['longitude'],
+            'text': row['heure_texte'],
+            'font': {'size': 10, 'color': 'black', 'family': 'Arial Black'},
+            'bgcolor': 'rgba(255, 255, 255, 0.8)',
+            'bordercolor': 'black',
+            'borderwidth': 1,
+            'borderpad': 3
+        })
+    
+    # Configuration de la carte
+    if mapbox_style == "satellite-streets":
+        # Pour Mapbox Satellite, on a besoin d'un token
+        # Utilisation de la version publique avec carto-darkmatter comme alternative
         fig.update_layout(
-            mapbox_style="open-street-map", 
+            mapbox=dict(
+                style="satellite-streets",  # Nécessite un token Mapbox
+                center=dict(
+                    lat=agent_path['latitude'].mean(),
+                    lon=agent_path['longitude'].mean()
+                ),
+                zoom=12
+            ),
             showlegend=True,
-            # Forcer le contraste du texte sur la carte
-            margin={"r":0,"t":40,"l":0,"b":0}
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor="rgba(255, 255, 255, 0.8)"
+            ),
+            margin={"r": 0, "t": 50, "l": 0, "b": 0},
+            height=700,
+            title={
+                'text': f'<b>Itinéraire détaillé de : {selected_agent}</b>',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 18}
+            }
         )
-        
-        st.plotly_chart(fig, use_container_width=True)
+    else:
+        fig.update_layout(
+            mapbox=dict(
+                style=mapbox_style,
+                center=dict(
+                    lat=agent_path['latitude'].mean(),
+                    lon=agent_path['longitude'].mean()
+                ),
+                zoom=12
+            ),
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor="rgba(255, 255, 255, 0.8)"
+            ),
+            margin={"r": 0, "t": 50, "l": 0, "b": 0},
+            height=700,
+            title={
+                'text': f'<b>Itinéraire détaillé de : {selected_agent}</b>',
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 18}
+            }
+        )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # 5. Timeline interactive du parcours
+    st.markdown("---")
+    st.markdown("### ⏱️ Timeline du parcours")
+    
+    timeline_data = agent_path[['timestamp', 'heure_texte', 'village', 'latitude', 'longitude']].copy()
+    timeline_data['point_num'] = range(1, len(timeline_data) + 1)
+    
+    # Création d'un graphique de timeline
+    fig_timeline = go.Figure()
+    
+    fig_timeline.add_trace(go.Scatter(
+        x=timeline_data['timestamp'],
+        y=timeline_data['point_num'],
+        mode='lines+markers+text',
+        marker=dict(size=12, color='orange', symbol='circle'),
+        line=dict(color='blue', width=2),
+        text=timeline_data['heure_texte'],
+        textposition='top center',
+        textfont=dict(size=10),
+        hovertemplate='<b>Point %{y}</b><br>Heure: %{text}<br>Village: %{customdata}<extra></extra>',
+        customdata=timeline_data['village'].fillna('N/A')
+    ))
+    
+    fig_timeline.update_layout(
+        title='<b>Chronologie des enquêtes</b>',
+        xaxis_title='Heure',
+        yaxis_title='N° du point',
+        height=400,
+        template='plotly_white',
+        hovermode='x unified'
+    )
+    
+    st.plotly_chart(fig_timeline, use_container_width=True)
+    
+    # 6. Tableau détaillé du parcours
+    st.markdown("---")
+    st.markdown("### 📋 Détail du parcours")
+    
+    detail_table = agent_path[['timestamp', 'heure_texte', 'village', 'province', 'district', 'latitude', 'longitude']].copy()
+    detail_table['N°'] = range(1, len(detail_table) + 1)
+    detail_table = detail_table[['N°', 'timestamp', 'heure_texte', 'village', 'province', 'district', 'latitude', 'longitude']]
+    detail_table.columns = ['N°', 'Date/Heure', 'Heure', 'Village', 'Province', 'District', 'Latitude', 'Longitude']
+    
+    st.dataframe(
+        detail_table.style.set_properties(**{
+            'background-color': 'white',
+            'color': 'black',
+            'border-color': '#ddd'
+        }),
+        use_container_width=True,
+        height=400
+    )
+    
+    # 7. Export des données du parcours
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Export CSV
+        csv = detail_table.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="📥 Télécharger le parcours (CSV)",
+            data=csv,
+            file_name=f"parcours_{selected_agent}_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        # Export JSON
+        json_data = detail_table.to_json(orient='records', force_ascii=False, indent=2)
+        st.download_button(
+            label="📥 Télécharger le parcours (JSON)",
+            data=json_data,
+            file_name=f"parcours_{selected_agent}_{datetime.now().strftime('%Y%m%d')}.json",
+            mime="application/json"
+        )
 
         
 def page_data_quality(data: pd.DataFrame):
