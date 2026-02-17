@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import matplotlib
 import scipy
-import streamlit_folium
+from streamlit_folium import st_folium
 import folium
 import plotly.express as px
 import plotly.graph_objects as go
