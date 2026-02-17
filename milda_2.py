@@ -565,7 +565,7 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
             'province': ['province', 'Province'],
             'district': ['district', 'district sanitaire', 'District sanitaire de :'],
             'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé'],
-            'village': ['village', 'Village'],
+            'village': ['village', 'Village/Avenue/Quartier'],
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête'],
             'menage_servi': ['menage_servi', 'Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?'],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage'],
