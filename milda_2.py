@@ -1307,6 +1307,44 @@ def page_agent_tracking(data: pd.DataFrame):
         # Petit tableau récapitulatif
         st.write("📋 **Chronologie des activités**")
         st.dataframe(agent_path[['timestamp', 'province', 'district', 'village']].head(20))
+
+def page_data_quality(data: pd.DataFrame):
+    st.markdown("## 🛡️ Contrôle Qualité des Données")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🔍 Doublons potentiels")
+        # Détection basée sur les coordonnées GPS et la date
+        if all(c in data.columns for c in ['latitude', 'longitude', 'date_enquete']):
+            duplicates = data[data.duplicated(subset=['latitude', 'longitude', 'date_enquete'], keep=False)]
+            if not duplicates.empty:
+                st.warning(f"⚠️ {len(duplicates)} lignes suspectées d'être des doublons (GPS + Date identiques).")
+                st.dataframe(duplicates)
+            else:
+                st.success("✅ Aucun doublon GPS/Date détecté.")
+
+    with col2:
+        st.markdown("### ⏱️ Cohérence temporelle")
+        # Vérifier si des interviews sont trop rapprochées (ex: moins de 5 min)
+        if 'agent_name' in data.columns and 'timestamp' in data.columns:
+            data_sorted = data.sort_values(['agent_name', 'timestamp'])
+            data_sorted['diff_temps'] = data_sorted.groupby('agent_name')['timestamp'].diff().dt.total_seconds() / 60
+            
+            anomalies = data_sorted[data_sorted['diff_temps'] < 5] # Moins de 5 minutes
+            if not anomalies.empty:
+                st.error(f"🚨 {len(anomalies)} interviews réalisées en moins de 5 min par le même agent.")
+                st.dataframe(anomalies[['agent_name', 'timestamp', 'diff_temps']])
+            else:
+                st.success("✅ Les délais entre interviews semblent réalistes.")
+
+    st.markdown("---")
+    st.markdown("### 📉 Analyse des valeurs manquantes")
+    missing_data = data.isnull().sum()
+    missing_df = pd.DataFrame({'Colonne': missing_data.index, 'Valeurs Manquantes': missing_data.values})
+    fig = px.bar(missing_df, x='Colonne', y='Valeurs Manquantes', title="Champs vides par colonne")
+    st.plotly_chart(fig, use_container_width=True)
+    
 ################################################################################
 # APPLICATION PRINCIPALE
 ################################################################################
@@ -1360,7 +1398,7 @@ def main():
         
         st.markdown("### 💡 À propos")
         st.markdown("""
-        **Version:** 2.0 Premium  
+        **Version:** 1.0
         **Date:** 2026  
         **Objectif:** 80% de couverture
         """)
@@ -1423,13 +1461,15 @@ def main():
         st.session_state['tables'] = tables
     
     # Navigation par onglets
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🏠 Dashboard",
-        "🔍 Analyse",
-        "🗺️ Cartographie",
-        "📊 Statistiques",
-        "📥 Export"
-    ])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🏠 Dashboard", 
+    "🔍 Analyse", 
+    "🗺️ Cartographie", 
+    "🏃 Suivi Agents", # Nouvel onglet
+    "🛡️ Qualité",      # Nouvel onglet
+    "📊 Statistiques",
+    "📊 Export"
+])
     
     with tab1:
         page_dashboard(data, tables)
@@ -1439,11 +1479,17 @@ def main():
     
     with tab3:
         page_maps(data)
-    
+
     with tab4:
+        page_agent_tracking(data)
+        
+    with tab5:
+        page_data_quality(data)
+        
+    with tab6:
         page_statistics(data)
     
-    with tab5:
+    with tab7:
         page_export(data, tables)
     
     # Footer
