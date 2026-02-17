@@ -1251,21 +1251,16 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     summary_df.columns = ['Valeur']
     st.dataframe(summary_df, use_container_width=True)
 
-def page_agent_tracking(data: pd.DataFrame):
+ def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
     
     df_track = data.copy()
 
-    # 1. Conversion forcée de la date en format Datetime
-    if 'date_enquete' in df_track.columns:
-        df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
-    else:
-        st.error("❌ Colonne 'date_enquete' manquante.")
-        return
-
-    # 2. Création du timestamp avec gestion d'erreur robuste
+    # 1. Conversion sécurisée
+    df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+    
+    # 2. Création du timestamp combiné
     if 'heure_interview' in df_track.columns:
-        # On s'assure que l'heure est au format string pour la concaténation
         df_track['timestamp'] = pd.to_datetime(
             df_track['date_enquete'].dt.date.astype(str) + ' ' + df_track['heure_interview'].astype(str),
             errors='coerce'
@@ -1273,46 +1268,42 @@ def page_agent_tracking(data: pd.DataFrame):
     else:
         df_track['timestamp'] = df_track['date_enquete']
 
-    # 3. Nettoyage des dates invalides (NaT) avant d'utiliser .dt
+    # 3. Nettoyage et création d'une colonne HEURE formatée en texte (pour éviter le .dt plus tard)
     df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
-
+    df_track['heure_display'] = df_track['timestamp'].dt.strftime('%H:%M')
+    
     if df_track.empty:
-        st.warning("⚠️ Aucune donnée chronologique ou GPS valide trouvée.")
+        st.warning("⚠️ Aucune donnée avec GPS et Heure valide.")
         return
 
-    # Tri chronologique
+    # 4. Tri et Sélection
     df_track = df_track.sort_values(['agent_name', 'timestamp'])
-
-    # Sélecteur d'agent
-    agents = sorted(df_track['agent_name'].unique())
-    selected_agent = st.selectbox("Sélectionner un enquêteur", agents)
+    selected_agent = st.selectbox("Sélectionner un enquêteur", sorted(df_track['agent_name'].unique()))
     agent_path = df_track[df_track['agent_name'] == selected_agent]
 
-    if not agent_path.empty:
-        fig = px.line_mapbox(
-            agent_path,
-            lat="latitude",
-            lon="longitude",
-            hover_name=agent_path['timestamp'].dt.strftime('%H:%M'), # Sécurisé car dropna fait avant
-            zoom=10,
-            height=600,
-            title=f"Parcours de {selected_agent}"
-        )
-        
-        # Ajout des points d'étape
-        fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'],
-            lon=agent_path['longitude'],
-            mode='markers+text',
-            marker=go.scattermapbox.Marker(size=12, color='red'),
-            # Utilisation de .dt.strftime de manière sécurisée
-            text=agent_path['timestamp'].dt.strftime('%H:%M'),
-            textposition="top right",
-            name="Heure de visite"
-        ))
+    # 5. Carte Plotly (On utilise 'heure_display' qui est du texte pur)
+    fig = px.line_mapbox(
+        agent_path,
+        lat="latitude",
+        lon="longitude",
+        hover_name="heure_display", 
+        zoom=12,
+        height=600,
+        title=f"Itinéraire de l'agent : {selected_agent}"
+    )
+    
+    fig.add_trace(go.Scattermapbox(
+        lat=agent_path['latitude'],
+        lon=agent_path['longitude'],
+        mode='markers+text',
+        marker=go.scattermapbox.Marker(size=12, color='red'),
+        text=agent_path['heure_display'],
+        textposition="top right",
+        name="Point d'enquête"
+    ))
 
-        fig.update_layout(mapbox_style="open-street-map", showlegend=True)
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(mapbox_style="open-street-map", showlegend=True)
+    st.plotly_chart(fig, use_container_width=True)
         
 def page_data_quality(data: pd.DataFrame):
     st.markdown("## 🛡️ Contrôle Qualité des Données")
