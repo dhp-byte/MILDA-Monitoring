@@ -1249,7 +1249,64 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     summary_df.columns = ['Valeur']
     st.dataframe(summary_df, use_container_width=True)
 
+def page_agent_tracking(data: pd.DataFrame):
+    st.markdown("## 🏃 Suivi du parcours des agents")
+    
+    # Vérification des colonnes nécessaires
+    required = ['agent_name', 'latitude', 'longitude', 'date_enquete']
+    if not all(col in data.columns for col in required):
+        st.error(f"Colonnes manquantes pour le suivi : {[c for c in required if c not in data.columns]}")
+        return
 
+    # Nettoyage et préparation des données
+    track_data = data.dropna(subset=['latitude', 'longitude', 'agent_name', 'date_enquete']).copy()
+    
+    # Création d'une colonne DateTime si l'heure est séparée (optionnel selon votre Excel)
+    if 'heure_interview' in track_data.columns:
+        track_data['timestamp'] = pd.to_datetime(
+            track_data['date_enquete'].dt.date.astype(str) + ' ' + track_data['heure_interview'].astype(str)
+        )
+    else:
+        track_data['timestamp'] = track_data['date_enquete']
+
+    # Tri par agent et par heure
+    track_data = track_data.sort_values(['agent_name', 'timestamp'])
+
+    # Filtre par agent
+    agents = sorted(track_data['agent_name'].unique())
+    selected_agent = st.selectbox("Sélectionner un agent pour voir son parcours", agents)
+    
+    agent_path = track_data[track_data['agent_name'] == selected_agent]
+
+    if not agent_path.empty:
+        # Création de la ligne de déplacement
+        fig = px.line_mapbox(
+            agent_path,
+            lat="latitude",
+            lon="longitude",
+            hover_name="timestamp",
+            hover_data=["village", "district"],
+            zoom=10,
+            height=600,
+            title=f"<b>Parcours de l'agent : {selected_agent}</b>"
+        )
+        
+        # Ajout des points (marqueurs) par-dessus la ligne
+        fig.add_trace(go.Scattermapbox(
+            lat=agent_path['latitude'],
+            lon=agent_path['longitude'],
+            mode='markers',
+            marker=go.scattermapbox.Marker(size=10, color='red'),
+            text=agent_path['timestamp'].dt.strftime('%H:%M'),
+            name="Points d'interview"
+        ))
+
+        fig.update_layout(mapbox_style="open-street-map")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Petit tableau récapitulatif
+        st.write("📋 **Chronologie des activités**")
+        st.dataframe(agent_path[['timestamp', 'province', 'district', 'village']].head(20))
 ################################################################################
 # APPLICATION PRINCIPALE
 ################################################################################
