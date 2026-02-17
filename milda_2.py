@@ -574,8 +574,8 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?'],
             'agent_name': ['agent_name', "Nom de l'enquêteur"],
-            'latitude': ['_LES COORDONNEES GEOGRAPHIQUES_latitude', 'latitude'],
-            'longitude': ['_LES COORDONNEES GEOGRAPHIQUES_longitude', 'longitude']
+            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude'],
+            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude']
         }
         
         # Appliquer le mapping
