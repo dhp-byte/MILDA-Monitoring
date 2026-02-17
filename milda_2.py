@@ -941,8 +941,8 @@ def page_analysis(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
             if selected_province != 'Toutes':
                 display_table = display_table[display_table['province'] == selected_province]
             
-            # Au lieu de .style.background_gradient(...)
-st.dataframe(display_table, use_container_width=True)(
+            st.dataframe(
+                display_table.style.background_gradient(
                     subset=['pct_servis', 'pct_correct', 'pct_marques', 'pct_informes'],
                     cmap='RdYlGn',
                     vmin=0,
@@ -950,6 +950,7 @@ st.dataframe(display_table, use_container_width=True)(
                 ),
                 use_container_width=True
             )
+
     
     with tab2:
         if 'performance_enqueteur' in tables:
