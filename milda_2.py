@@ -571,7 +571,7 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?'],
             'verif_cle': ['verif_cle'],
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?'],
-            'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l'utilisation correcte du MILDA par les relais communautaires ?'],
+            'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?'],
             'agent_name': ['agent_name', "Nom de l'enquêteur"],
             'latitude': ['_LES COORDONNEES GEOGRAPHIQUES_latitude', 'latitude'],
             'longitude': ['_LES COORDONNEES GEOGRAPHIQUES_longitude', 'longitude']
