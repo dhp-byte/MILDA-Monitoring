@@ -9,7 +9,6 @@ import numpy as np
 import matplotlib
 import scipy
 import folium
-import streamlit-folium
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
