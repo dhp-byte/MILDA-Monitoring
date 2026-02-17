@@ -42,7 +42,7 @@ except ImportError:
 
 # Configuration de la page
 st.set_page_config(
-    page_title="🦟 MILDA Dashboard Premium",
+    page_title="MILDA Dashboard Premium",
     page_icon="🦟",
     layout="wide",
     initial_sidebar_state="expanded",
