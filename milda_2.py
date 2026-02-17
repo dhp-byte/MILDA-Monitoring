@@ -1251,96 +1251,98 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     summary_df.columns = ['Valeur']
     st.dataframe(summary_df, use_container_width=True)
 
- def page_agent_tracking(data: pd.DataFrame):
-     st.markdown("## 🏃 Suivi du parcours des agents")
+def page_agent_tracking(data: pd.DataFrame):
+    st.markdown("## 🏃 Suivi du parcours des agents")
     
-     df_track = data.copy()
+    df_track = data.copy()
 
     # 1. Conversion sécurisée
-     df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+    df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
     
     # 2. Création du timestamp combiné
-     if 'heure_interview' in df_track.columns:
-         df_track['timestamp'] = pd.to_datetime(
+    if 'heure_interview' in df_track.columns:
+        df_track['timestamp'] = pd.to_datetime(
             df_track['date_enquete'].dt.date.astype(str) + ' ' + df_track['heure_interview'].astype(str),
             errors='coerce'
-         )
-     else:
-         df_track['timestamp'] = df_track['date_enquete']
+        )
+    else:
+        df_track['timestamp'] = df_track['date_enquete']
 
     # 3. Nettoyage et création d'une colonne HEURE formatée en texte (pour éviter le .dt plus tard)
-     df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
-     df_track['heure_display'] = df_track['timestamp'].dt.strftime('%H:%M')
+    df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
+    df_track['heure_display'] = df_track['timestamp'].dt.strftime('%H:%M')
     
-     if df_track.empty:
-         st.warning("⚠️ Aucune donnée avec GPS et Heure valide.")
-         return
+    if df_track.empty:
+        st.warning("⚠️ Aucune donnée avec GPS et Heure valide.")
+        return
 
     # 4. Tri et Sélection
-     df_track = df_track.sort_values(['agent_name', 'timestamp'])
-     selected_agent = st.selectbox("Sélectionner un enquêteur", sorted(df_track['agent_name'].unique()))
-     agent_path = df_track[df_track['agent_name'] == selected_agent]
+    df_track = df_track.sort_values(['agent_name', 'timestamp'])
+    selected_agent = st.selectbox("Sélectionner un enquêteur", sorted(df_track['agent_name'].unique()))
+    agent_path = df_track[df_track['agent_name'] == selected_agent]
 
     # 5. Carte Plotly (On utilise 'heure_display' qui est du texte pur)
-     fig = px.line_mapbox(
-         agent_path,
-         lat="latitude",
-         lon="longitude",
-         hover_name="heure_display", 
-         zoom=12,
-         height=600,
-         title=f"Itinéraire de l'agent : {selected_agent}"
-     )
+    fig = px.line_mapbox(
+        agent_path,
+        lat="latitude",
+        lon="longitude",
+        hover_name="heure_display", 
+        zoom=12,
+        height=600,
+        title=f"Itinéraire de l'agent : {selected_agent}"
+    )
     
-     fig.add_trace(go.Scattermapbox(
-         lat=agent_path['latitude'],
-         lon=agent_path['longitude'],
-         mode='markers+text',
-         marker=go.scattermapbox.Marker(size=12, color='red'),
-         text=agent_path['heure_display'],
-         textposition="top right",
-         name="Point d'enquête"
-     ))
+    fig.add_trace(go.Scattermapbox(
+        lat=agent_path['latitude'],
+        lon=agent_path['longitude'],
+        mode='markers+text',
+        marker=go.scattermapbox.Marker(size=12, color='red'),
+        text=agent_path['heure_display'],
+        textposition="top right",
+        name="Point d'enquête"
+    ))
 
-     fig.update_layout(mapbox_style="open-street-map", showlegend=True)
-     st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(mapbox_style="open-street-map", showlegend=True)
+    st.plotly_chart(fig, use_container_width=True)
         
 def page_data_quality(data: pd.DataFrame):
-    st.markdown("## 🛡️ Contrôle Qualité des Données")
+    st.markdown("## 🛡️ Contrôle Qualité (Data Quality Assurance)")
+    
+    # Préparation des données temporelles
+    df_qc = data.copy()
+    df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
     
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        st.markdown("### 🔍 Doublons potentiels")
-        # Détection basée sur les coordonnées GPS et la date
-        if all(c in data.columns for c in ['latitude', 'longitude', 'date_enquete']):
-            duplicates = data[data.duplicated(subset=['latitude', 'longitude', 'date_enquete'], keep=False)]
-            if not duplicates.empty:
-                st.warning(f"⚠️ {len(duplicates)} lignes suspectées d'être des doublons (GPS + Date identiques).")
-                st.dataframe(duplicates)
-            else:
-                st.success("✅ Aucun doublon GPS/Date détecté.")
+        st.subheader("📍 Doublons Géographiques")
+        # Même endroit, même jour = suspect
+        dups = df_qc.duplicated(subset=['latitude', 'longitude', 'date_enquete'], keep=False)
+        n_dups = dups.sum()
+        if n_dups > 0:
+            st.error(f"🚨 {n_dups} entrées suspectes détectées (Même GPS et même date).")
+            st.dataframe(df_qc[dups][['agent_name', 'village', 'date_enquete']])
+        else:
+            st.success("✅ Aucun doublon géographique détecté.")
 
     with col2:
-        st.markdown("### ⏱️ Cohérence temporelle")
-        # Vérifier si des interviews sont trop rapprochées (ex: moins de 5 min)
-        if 'agent_name' in data.columns and 'timestamp' in data.columns:
-            data_sorted = data.sort_values(['agent_name', 'timestamp'])
-            data_sorted['diff_temps'] = data_sorted.groupby('agent_name')['timestamp'].diff().dt.total_seconds() / 60
+        st.subheader("⏱️ Cadence des Interviews")
+        # Vérifier si un agent fait des interviews trop vite (< 10 minutes)
+        if 'timestamp' in df_qc.columns:
+            df_qc = df_qc.sort_values(['agent_name', 'timestamp'])
+            df_qc['delai'] = df_qc.groupby('agent_name')['timestamp'].diff().dt.total_seconds() / 60
             
-            anomalies = data_sorted[data_sorted['diff_temps'] < 5] # Moins de 5 minutes
-            if not anomalies.empty:
-                st.error(f"🚨 {len(anomalies)} interviews réalisées en moins de 5 min par le même agent.")
-                st.dataframe(anomalies[['agent_name', 'timestamp', 'diff_temps']])
+            fast_surveys = df_qc[df_qc['delai'] < 10]
+            if not fast_surveys.empty:
+                st.warning(f"⚠️ {len(fast_surveys)} interviews réalisées en moins de 10 min.")
+                st.dataframe(fast_surveys[['agent_name', 'village', 'delai']])
             else:
-                st.success("✅ Les délais entre interviews semblent réalistes.")
+                st.success("✅ Rythme d'enquête réaliste.")
 
-    st.markdown("---")
-    st.markdown("### 📉 Analyse des valeurs manquantes")
-    missing_data = data.isnull().sum()
-    missing_df = pd.DataFrame({'Colonne': missing_data.index, 'Valeurs Manquantes': missing_data.values})
-    fig = px.bar(missing_df, x='Colonne', y='Valeurs Manquantes', title="Champs vides par colonne")
-    st.plotly_chart(fig, use_container_width=True)
+    st.divider()
+    st.subheader("📊 Complétude des colonnes clés")
+    missing = data.isnull().mean() * 100
+    st.bar_chart(missing)
     
 ################################################################################
 # APPLICATION PRINCIPALE
