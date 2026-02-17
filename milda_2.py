@@ -1254,62 +1254,66 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
 def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
     
-    # Vérification des colonnes nécessaires
-    required = ['agent_name', 'latitude', 'longitude', 'date_enquete']
-    if not all(col in data.columns for col in required):
-        st.error(f"Colonnes manquantes pour le suivi : {[c for c in required if c not in data.columns]}")
+    df_track = data.copy()
+
+    # 1. Conversion forcée de la date en format Datetime
+    if 'date_enquete' in df_track.columns:
+        df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
+    else:
+        st.error("❌ Colonne 'date_enquete' manquante.")
         return
 
-    # Nettoyage et préparation des données
-    track_data = data.dropna(subset=['latitude', 'longitude', 'agent_name', 'date_enquete']).copy()
-    
-    # Création d'une colonne DateTime si l'heure est séparée (optionnel selon votre Excel)
-    if 'heure_interview' in track_data.columns:
-        track_data['timestamp'] = pd.to_datetime(
-            track_data['date_enquete'].dt.date.astype(str) + ' ' + track_data['heure_interview'].astype(str)
+    # 2. Création du timestamp avec gestion d'erreur robuste
+    if 'heure_interview' in df_track.columns:
+        # On s'assure que l'heure est au format string pour la concaténation
+        df_track['timestamp'] = pd.to_datetime(
+            df_track['date_enquete'].dt.date.astype(str) + ' ' + df_track['heure_interview'].astype(str),
+            errors='coerce'
         )
     else:
-        track_data['timestamp'] = track_data['date_enquete']
+        df_track['timestamp'] = df_track['date_enquete']
 
-    # Tri par agent et par heure
-    track_data = track_data.sort_values(['agent_name', 'timestamp'])
+    # 3. Nettoyage des dates invalides (NaT) avant d'utiliser .dt
+    df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
 
-    # Filtre par agent
-    agents = sorted(track_data['agent_name'].unique())
-    selected_agent = st.selectbox("Sélectionner un agent pour voir son parcours", agents)
-    
-    agent_path = track_data[track_data['agent_name'] == selected_agent]
+    if df_track.empty:
+        st.warning("⚠️ Aucune donnée chronologique ou GPS valide trouvée.")
+        return
+
+    # Tri chronologique
+    df_track = df_track.sort_values(['agent_name', 'timestamp'])
+
+    # Sélecteur d'agent
+    agents = sorted(df_track['agent_name'].unique())
+    selected_agent = st.selectbox("Sélectionner un enquêteur", agents)
+    agent_path = df_track[df_track['agent_name'] == selected_agent]
 
     if not agent_path.empty:
-        # Création de la ligne de déplacement
         fig = px.line_mapbox(
             agent_path,
             lat="latitude",
             lon="longitude",
-            hover_name="timestamp",
-            hover_data=["village", "district"],
+            hover_name=agent_path['timestamp'].dt.strftime('%H:%M'), # Sécurisé car dropna fait avant
             zoom=10,
             height=600,
-            title=f"<b>Parcours de l'agent : {selected_agent}</b>"
+            title=f"Parcours de {selected_agent}"
         )
         
-        # Ajout des points (marqueurs) par-dessus la ligne
+        # Ajout des points d'étape
         fig.add_trace(go.Scattermapbox(
             lat=agent_path['latitude'],
             lon=agent_path['longitude'],
-            mode='markers',
-            marker=go.scattermapbox.Marker(size=10, color='red'),
+            mode='markers+text',
+            marker=go.scattermapbox.Marker(size=12, color='red'),
+            # Utilisation de .dt.strftime de manière sécurisée
             text=agent_path['timestamp'].dt.strftime('%H:%M'),
-            name="Points d'interview"
+            textposition="top right",
+            name="Heure de visite"
         ))
 
-        fig.update_layout(mapbox_style="open-street-map")
+        fig.update_layout(mapbox_style="open-street-map", showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Petit tableau récapitulatif
-        st.write("📋 **Chronologie des activités**")
-        st.dataframe(agent_path[['timestamp', 'province', 'district', 'village']].head(20))
-
 def page_data_quality(data: pd.DataFrame):
     st.markdown("## 🛡️ Contrôle Qualité des Données")
     
@@ -1470,7 +1474,7 @@ def main():
     "🏃 Suivi Agents", # Nouvel onglet
     "🛡️ Qualité",      # Nouvel onglet
     "📊 Statistiques",
-    "📊 Export"
+    "📥 Export"
 ])
     
     with tab1:
