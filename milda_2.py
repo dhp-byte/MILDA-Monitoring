@@ -573,7 +573,7 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
             'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q0"'],
             'village': ['village', 'Village/Avenue/Quartier', 'S0Q07'],
-            'menage_servi': ['menage_servi', 'Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17'],
+            'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17'],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20'],
             'verif_cle': ['verif_cle', 'gr_1/verif_cle'],
