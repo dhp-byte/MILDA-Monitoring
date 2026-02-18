@@ -1924,3 +1924,7 @@ def main():
     # Footer
     st.markdown("---")
     st.caption(f"🦟 MILDA Dashboard | Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
+
+
+if __name__ == "__main__":
+    main()
