@@ -1943,7 +1943,24 @@ def main():
     with tab7:
         page_export(data, tables)
     with tab8:
-        generate_automatic_report(data, tables)
+        st.markdown("## 📊 Génération du Rapport de Synthèse")
+        st.write("""
+        Cet outil compile automatiquement toutes les données de dénombrement et de distribution 
+        pour générer un document Word prêt pour l'archivage ou la présentation officielle.
+        """)
+        
+        # Appel de votre fonction de bouton
+        download_automatic_report_button(data, tables)
+
+        # Petit conseil visuel
+        st.divider()
+        st.markdown("""
+        **Note :** Le rapport inclut :
+        - Les caractéristiques des chefs de ménage.
+        - Les indicateurs de performance par Centre de Santé.
+        - L'analyse des écarts de distribution (Sur-distribution / Sous-distribution).
+        - Les recommandations automatiques basées sur les scores.
+        """)
     
     # Footer
     st.markdown("---")
