@@ -10,6 +10,8 @@ import matplotlib
 import scipy
 from streamlit_folium import st_folium
 import folium
+import requests
+from koboextractor import KoboExtractor
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
