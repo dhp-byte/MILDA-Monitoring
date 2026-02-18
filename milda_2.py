@@ -1794,7 +1794,20 @@ def download_automatic_report_button(data: pd.DataFrame, tables: dict):
                 else:
                     st.error("❌ Erreur lors de la génération du rapport")
 
-    
+def get_kobo_token(url, username, password):
+    """Récupère le jeton API à partir des identifiants"""
+    try:
+        # L'endpoint pour obtenir le token via Basic Auth
+        token_url = f"{url}/token/?format=json"
+        response = requests.get(token_url, auth=(username, password))
+        if response.status_code == 200:
+            return response.json().get('token')
+        else:
+            st.error(f"Erreur d'authentification ({response.status_code}) : Vérifiez vos identifiants.")
+            return None
+    except Exception as e:
+        st.error(f"Erreur de connexion : {e}")
+        return None    
 ################################################################################
 # APPLICATION PRINCIPALE
 ################################################################################
@@ -1807,61 +1820,70 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("🔌 Connexion KoboToolbox")
-        api_token = st.text_input("Clé API KoBo", type="password")
+        st.header("🔑 Connexion KoBo")
         server_base = st.selectbox("Serveur", 
                                   ["https://kf.kobotoolbox.org", "https://kobo.humanitarianresponse.info"])
         
-        # Optionnel : bouton pour vider le cache
-        if st.button("Réinitialiser la session"):
-            st.session_state.clear()
-            st.rerun()
+        username = st.text_input("Nom d'utilisateur")
+        password = st.text_input("Mot de passe", type="password")
+        
+        # Bouton de connexion
+        connect_button = st.button("Se connecter au compte")
 
-    # Initialisation du DataFrame dans la session pour qu'il reste en mémoire
+    # Initialisation de la session pour stocker le token et le DataFrame
+    if 'kobo_token' not in st.session_state:
+        st.session_state.kobo_token = None
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    # --- 2. LOGIQUE D'EXTRACTION ---
-    if api_token:
+    # --- 2. GESTION DE LA CONNEXION ---
+    if connect_button:
+        if username and password:
+            with st.spinner("Authentification en cours..."):
+                token = get_kobo_token(server_base, username, password)
+                if token:
+                    st.session_state.kobo_token = token
+                    st.success("✅ Connexion réussie !")
+        else:
+            st.warning("Veuillez remplir les deux champs.")
+
+    # --- 3. EXTRACTION DES DONNÉES (Si connecté) ---
+    if st.session_state.kobo_token:
         try:
-            kobo = KoboExtractor(api_token, f"{server_base}/api/v2")
+            kobo = KoboExtractor(st.session_state.kobo_token, f"{server_base}/api/v2")
             assets_data = kobo.list_assets()
             forms = {a['name']: a['uid'] for a in assets_data['results'] if a['asset_type'] == 'survey'}
 
             if forms:
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    selected_form_name = st.selectbox("Sélectionnez votre formulaire :", list(forms.keys()))
-                with col2:
-                    st.write("##") # Alignement
-                    if st.button("🚀 Charger les données", use_container_width=True):
-                        with st.spinner('Extraction et transformation des données...'):
-                            asset = kobo.get_asset(forms[selected_form_name])
-                            choice_lists = kobo.get_choices(asset)
+                st.markdown("---")
+                col_sel, col_btn = st.columns([2, 1])
+                
+                with col_sel:
+                    selected_form_name = st.selectbox("Sélectionnez votre formulaire MILDA :", list(forms.keys()))
+                
+                with col_btn:
+                    st.write("##")
+                    if st.button("📥 Charger les données", use_container_width=True):
+                        with st.spinner('Téléchargement des données en cours...'):
+                            uid = forms[selected_form_name]
+                            asset = kobo.get_asset(uid)
+                            choices = kobo.get_choices(asset)
                             questions = kobo.get_questions(asset)
-                            raw_data = kobo.get_data(forms[selected_form_name])
+                            raw_data = kobo.get_data(uid)
 
-                            labeled_results = []
-                            for row in raw_data.get('results', []):
-                                labeled_row = kobo.label_result(
-                                    unlabeled_result=row, 
-                                    choice_lists=choice_lists, 
-                                    questions=questions,
-                                    unpack_multiples=True
-                                )
-                                labeled_results.append(labeled_row)
+                            labeled_results = [
+                                kobo.label_result(row, choices, questions, unpack_multiples=True) 
+                                for row in raw_data.get('results', [])
+                            ]
                             
                             if labeled_results:
-                                # Sauvegarde dans le session_state
                                 st.session_state.df = pd.DataFrame(labeled_results)
-                                st.success(f"✅ {len(st.session_state.df)} soumissions chargées !")
+                                st.rerun() # Rafraîchir pour afficher les onglets
                             else:
-                                st.warning("Ce formulaire est vide.")
+                                st.warning("Le formulaire sélectionné est vide.")
             
         except Exception as e:
-            st.error(f"Erreur de connexion : {e}")
-    else:
-        st.info("👋 Veuillez saisir votre clé API KoBo dans la barre latérale pour commencer.")
+            st.error(f"Erreur lors de la récupération des formulaires : {e}")
 
     # --- 3. AFFICHAGE DES ONGLETS (Si les données sont chargées) ---
     if st.session_state.df is not None:
