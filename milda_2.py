@@ -566,20 +566,19 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
         
         # Mapping des colonnes (version robuste)
         column_mapping = {
-            'province': ['province', 'Province'],
-            'district': ['district', 'district sanitaire', 'District sanitaire de :'],
-            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé'],
-            'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête'],
+            'province': ['province', 'Province', 'S0Q04'],
+            'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q05'],
+            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q06'],
+            'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
-            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username'],
-            'village': ['village', 'Village/Avenue/Quartier'],
-            'menage_servi': ['menage_servi', 'Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?'],
-            'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage'],
-            'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?'],
-            'verif_cle': ['verif_cle'],
-            'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?'],
-            'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?'],
-            'agent_name': ['agent_name', "Nom de l'enquêteur"],
+            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q0"'],
+            'village': ['village', 'Village/Avenue/Quartier', 'S0Q07'],
+            'menage_servi': ['menage_servi', 'Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17'],
+            'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19'],
+            'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20'],
+            'verif_cle': ['verif_cle', 'gr_1/verif_cle'],
+            'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', , 'gr_1/S1Q22'],
+            'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude'],
             'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude']
         }
@@ -1902,9 +1901,9 @@ def main():
                                 results = res_data.json().get('results', [])
                                 if results:
                                     data = pd.DataFrame(results)
-                                    st.write("Colonnes détectées dans KoBo :", list(data.columns))
+                                    #st.write("Colonnes détectées dans KoBo :", list(data.columns))
                                     # Nettoyage des colonnes KoBo
-                                    data.columns = [c.split('/')[-1] for c in data.columns]
+                                    #data.columns = [c.split('/')[-1] for c in data.columns]
 
                                     data, stats = process_raw_kobo_data(data)
                                     # Traitement et stockage
