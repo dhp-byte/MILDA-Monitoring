@@ -1850,47 +1850,57 @@ def main():
             st.warning("Veuillez remplir les deux champs.")
 
     # --- 3. EXTRACTION DES DONNÉES (Si connecté) ---
-    if st.session_state.kobo_token:
-        try:
-            kobo = KoboExtractor(st.session_state.kobo_token, f"{server_base}/api/v2")
-            assets_data = kobo.list_assets()
-            forms = {a['name']: a['uid'] for a in assets_data['results'] if a['asset_type'] == 'survey'}
-
-            if forms:
-                st.markdown("---")
-                col_sel, col_btn = st.columns([2, 1])
-                
-                with col_sel:
-                    selected_form_name = st.selectbox("Sélectionnez votre formulaire MILDA :", list(forms.keys()))
-                
-                with col_btn:
-                    st.write("##")
-                    if st.button("📥 Charger les données", use_container_width=True):
-                        with st.spinner('Téléchargement des données en cours...'):
-                            uid = forms[selected_form_name]
-                            asset = kobo.get_asset(uid)
-                            choices = kobo.get_choices(asset)
-                            questions = kobo.get_questions(asset)
-                            raw_data = kobo.get_data(uid)
-
-                            labeled_results = [
-                                kobo.label_result(row, choices, questions, unpack_multiples=True) 
-                                for row in raw_data.get('results', [])
-                            ]
-                            
-                            if labeled_results:
-                                st.session_state.df = pd.DataFrame(labeled_results)
-                                st.rerun() # Rafraîchir pour afficher les onglets
-                            else:
-                                st.warning("Le formulaire sélectionné est vide.")
+    # --- DANS VOTRE FONCTION MAIN, APRÈS LA CONNEXION ---
+if st.session_state.kobo_token:
+    headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
+    
+    try:
+        # Récupération de la liste des formulaires (Assets)
+        assets_url = f"{server_base}/api/v2/assets.json"
+        res_assets = requests.get(assets_url, headers=headers)
+        
+        if res_assets.status_code == 200:
+            assets_data = res_assets.json().get('results', [])
+            forms = {a['name']: a['uid'] for a in assets_data if a['asset_type'] == 'survey'}
             
-        except Exception as e:
-            st.error(f"Erreur lors de la récupération des formulaires : {e}")
+            selected_form = st.selectbox("Choisir le formulaire :", ["-- Sélectionner --"] + list(forms.keys()))
+            
+            if selected_form != "-- Sélectionner --":
+                if st.button("📥 Charger les données"):
+                    with st.spinner('Extraction des données depuis KoBo...'):
+                        uid = forms[selected_form]
+                        
+                        # URL pour récupérer les données JSON
+                        data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
+                        res_data = requests.get(data_url, headers=headers)
+                        
+                        if res_data.status_code == 200:
+                            results = res_data.json().get('results', [])
+                            
+                            if results:
+                                # Transformation en DataFrame
+                                data = pd.DataFrame(results)
+                                
+                                # Nettoyage des noms de colonnes (enlève les préfixes de groupes)
+                                data.columns = [c.split('/')[-1] for c in data.columns]
+                                
+                                st.session_state.data = data
+                                st.success(f"✅ {len(data)} enregistrements chargés !")
+                                st.rerun()
+                            else:
+                                st.warning("Le formulaire est vide.")
+                        else:
+                            st.error(f"Erreur lors de la récupération des données ({res_data.status_code})")
+        else:
+            st.error("Impossible de récupérer la liste des projets.")
+            
+    except Exception as e:
+        st.error(f"Une erreur est survenue : {e}")
 
     # --- 3. AFFICHAGE DES ONGLETS (Si les données sont chargées) ---
-    if st.session_state.df is not None:
+    if st.session_state.data is not None:
         # Nettoyage rapide des colonnes (Kobo ajoute souvent des préfixes ou des /)
-        data = st.session_state.df.copy()
+        data = st.session_state.data.copy()
         
         st.markdown("---")
         
