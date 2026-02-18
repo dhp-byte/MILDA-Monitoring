@@ -1809,6 +1809,35 @@ def get_kobo_token(url, username, password):
     except Exception as e:
         st.error(f"Erreur de connexion : {e}")
         return None    
+
+def process_raw_kobo_data(df):
+    """Applique la logique de calcul des indicateurs sur les données brutes"""
+    # Normalisation Oui/Non (utilise votre classe DataProcessor existante)
+    yes_no_cols = ['menage_servi', 'verif_cle', 'menage_marque', 'sensibilise']
+    for col in yes_no_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(DataProcessor.normalize_yes_no)
+    
+    # Conversion numérique
+    for col in ['nb_personnes', 'nb_milda_recues']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Calcul des indicateurs attendus par votre Dashboard 
+    if 'nb_personnes' in df.columns:
+        df['nb_milda_attendues'] = df['nb_personnes'].apply(DataProcessor.calculate_expected_milda)
+    
+    # GÉNÉRATION DES COLONNES MANQUANTES (Cause de la KeyError)
+    df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int)
+    df['indic_correct'] = ((df.get('menage_servi') == 'Oui') & (df.get('verif_cle') == 'Oui')).astype(int)
+    df['indic_marque'] = ((df.get('menage_servi') == 'Oui') & (df.get('menage_marque') == 'Oui')).astype(int)
+    df['indic_info'] = (df.get('sensibilise') == 'Oui').astype(int)
+    
+    # Calcul des écarts pour la page analyse
+    if 'nb_milda_attendues' in df.columns and 'nb_milda_recues' in df.columns:
+        df['ecart_distribution'] = df['nb_milda_recues'] - df['nb_milda_attendues']
+
+    return df, {"total_rows": len(df)}
 ################################################################################
 # APPLICATION PRINCIPALE
 ################################################################################
@@ -1875,7 +1904,8 @@ def main():
                                     data = pd.DataFrame(results)
                                     # Nettoyage des colonnes KoBo
                                     data.columns = [c.split('/')[-1] for c in data.columns]
-                                    
+
+                                    data, stats = process_raw_kobo_data(df_raw)
                                     # Traitement et stockage
                                     st.session_state.data = data
                                     st.session_state.tables = generate_analysis_tables(data)
