@@ -1900,9 +1900,9 @@ def main():
                             
                             if res_data.status_code == 200:
                                 results = res_data.json().get('results', [])
-                                st.write("Colonnes détectées dans KoBo :", list(data.columns))
                                 if results:
                                     data = pd.DataFrame(results)
+                                    st.write("Colonnes détectées dans KoBo :", list(data.columns))
                                     # Nettoyage des colonnes KoBo
                                     data.columns = [c.split('/')[-1] for c in data.columns]
 
