@@ -1956,8 +1956,7 @@ if st.session_state.kobo_token:
         - 📊 Distribution: menage_servi, nb_personnes, nb_milda_recues
         - ✅ Qualité: verif_cle, menage_marque, sensibilise
         """)
-        
-        return
+            return
     
     # Chargement des données
     with st.spinner("🔄 Chargement et traitement des données..."):
