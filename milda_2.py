@@ -1349,334 +1349,91 @@ def page_agent_tracking(data: pd.DataFrame):
 ################################################################################
 
 def page_data_quality(data: pd.DataFrame):
-    """
-    Page d'analyse de qualité des données par agent - VERSION AMÉLIORÉE
+    st.markdown("## 🛡️ Contrôle Qualité des Données (QA/QC)")
+    st.info("Cette section identifie les anomalies potentielles pour garantir la fiabilité des indicateurs MILDA.")
+
+    df_qc = data.copy()
     
-    Nouvelles fonctionnalités :
-    - Analyse détaillée par agent enquêteur
-    - Détection des anomalies et incohérences
-    - Score de qualité multidimensionnel
-    - Comparaison entre agents
-    """
-    
-    st.markdown("## 🔍 Qualité des Données par Agent")
-    
-    if 'agent_name' not in data.columns:
-        st.error("❌ Colonne 'agent_name' manquante dans les données")
-        return
-    
-    # ========== CALCULS DES INDICATEURS DE QUALITÉ ==========
-    
-    def calculate_agent_quality(agent_df):
-        """Calcule les indicateurs de qualité pour un agent"""
-        total = len(agent_df)
-        
-        if total == 0:
-            return None
-        
-        # Indicateurs de complétude
-        completeness_coords = (
-            agent_df['latitude'].notna().sum() + agent_df['longitude'].notna().sum()
-        ) / (2 * total) * 100
-        
-        completeness_data = agent_df.notna().mean(axis=1).mean() * 100
-        
-        # Indicateurs de cohérence
-        coherence_servi = 0
-        if 'menage_servi' in agent_df.columns and 'nb_milda_recues' in agent_df.columns:
-            servis = agent_df[agent_df['menage_servi'] == 'Oui']
-            if len(servis) > 0:
-                coherence_servi = (servis['nb_milda_recues'].notna().sum() / len(servis)) * 100
-        
-        # Indicateurs de conformité
-        conformite = 0
-        if 'indic_correct' in agent_df.columns:
-            servis = agent_df[agent_df['menage_servi'] == 'Oui']
-            if len(servis) > 0:
-                conformite = (agent_df['indic_correct'].sum() / len(servis)) * 100
-        
-        # Détection d'anomalies GPS
-        anomalies_gps = 0
-        if 'latitude' in agent_df.columns and 'longitude' in agent_df.columns:
-            valid_coords = agent_df.dropna(subset=['latitude', 'longitude'])
-            if len(valid_coords) > 0:
-                # Vérifier les coordonnées dans les limites du Tchad
-                valid_tchad = (
-                    (valid_coords['latitude'] >= 7.5) & (valid_coords['latitude'] <= 23.5) &
-                    (valid_coords['longitude'] >= 13.5) & (valid_coords['longitude'] <= 24.0)
-                )
-                anomalies_gps = ((~valid_tchad).sum() / len(valid_coords)) * 100
-        
-        # Doublons temporels (enquêtes au même moment)
-        doublons_temps = 0
-        if 'timestamp' in agent_df.columns:
-            doublons_temps = (agent_df['timestamp'].duplicated().sum() / total) * 100
-        
-        # Vitesse de travail (enquêtes par heure)
-        vitesse_travail = 0
-        if 'timestamp' in agent_df.columns and len(agent_df) > 1:
-            duree_heures = (agent_df['timestamp'].max() - agent_df['timestamp'].min()).total_seconds() / 3600
-            if duree_heures > 0:
-                vitesse_travail = total / duree_heures
-        
-        # Score de qualité global (0-100)
-        score_qualite = (
-            completeness_data * 0.30 +
-            completeness_coords * 0.20 +
-            coherence_servi * 0.20 +
-            conformite * 0.20 +
-            (100 - anomalies_gps) * 0.10
+    # Préparation des colonnes temporelles pour les calculs de cadence
+    df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
+    if 'heure_interview' in df_qc.columns:
+        df_qc['timestamp'] = pd.to_datetime(
+            df_qc['date_enquete'].dt.date.astype(str) + ' ' + df_qc['heure_interview'].astype(str),
+            errors='coerce'
         )
-        
-        return {
-            'agent': agent_df['agent_name'].iloc[0],
-            'nb_enquetes': total,
-            'completeness_data': round(completeness_data, 1),
-            'completeness_coords': round(completeness_coords, 1),
-            'coherence_servi': round(coherence_servi, 1),
-            'conformite': round(conformite, 1),
-            'anomalies_gps': round(anomalies_gps, 1),
-            'doublons_temps': round(doublons_temps, 1),
-            'vitesse_travail': round(vitesse_travail, 2),
-            'score_qualite': round(score_qualite, 1)
-        }
     
-    # Calcul pour tous les agents
-    quality_data = []
-    for agent in data['agent_name'].dropna().unique():
-        agent_df = data[data['agent_name'] == agent].copy()
-        quality_metrics = calculate_agent_quality(agent_df)
-        if quality_metrics:
-            quality_data.append(quality_metrics)
-    
-    quality_df = pd.DataFrame(quality_data)
-    
-    if len(quality_df) == 0:
-        st.warning("Aucune donnée de qualité calculable")
-        return
-    
-    # Trier par score de qualité
-    quality_df = quality_df.sort_values('score_qualité', ascending=False).reset_index(drop=True)
-    
-    # ========== AFFICHAGE DES RÉSULTATS ==========
-    
-    st.markdown("### 📊 Vue d'ensemble")
-    
-    col1, col2, col3, col4 = st.columns(4)
+    # Création de colonnes de contrôle logique
+    # 1. Ratio moustiquaires/personnes (La norme est souvent 1 pour 2)
+    if 'nb_milda_recues' in df_qc.columns and 'nb_personnes' in df_qc.columns:
+        df_qc['milda_per_person'] = df_qc['nb_milda_recues'] / df_qc['nb_personnes'].replace(0, np.nan)
+
+    # Mise en page en colonnes pour les indicateurs clés
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        score_moyen = quality_df['score_qualite'].mean()
-        st.metric(
-            "Score moyen de qualité",
-            f"{score_moyen:.1f}/100",
-            delta=None
-        )
-    
+        # A. Doublons GPS
+        dups = df_qc.duplicated(subset=['latitude', 'longitude', 'date_enquete'], keep=False).sum()
+        st.metric("Doublons GPS", dups, delta="- Suspect" if dups > 0 else "Correct", delta_color="inverse")
+        
     with col2:
-        meilleur_agent = quality_df.iloc[0]
-        st.metric(
-            "Meilleur agent",
-            meilleur_agent['agent'],
-            delta=f"{meilleur_agent['score_qualite']:.1f}/100"
-        )
-    
+        # B. Interviews trop rapides (< 10 min)
+        fast_interviews = 0
+        if 'timestamp' in df_qc.columns:
+            df_qc = df_qc.sort_values(['agent_name', 'timestamp'])
+            df_qc['delai'] = df_qc.groupby('agent_name')['timestamp'].diff().dt.total_seconds() / 60
+            fast_interviews = (df_qc['delai'] < 10).sum()
+        st.metric("Interviews < 10min", fast_interviews, delta="- Alerte" if fast_interviews > 0 else "OK", delta_color="inverse")
+
     with col3:
-        agents_excellents = (quality_df['score_qualite'] >= 80).sum()
-        st.metric(
-            "Agents excellents",
-            f"{agents_excellents}/{len(quality_df)}",
-            delta=f"{(agents_excellents/len(quality_df)*100):.0f}%"
+        # C. Valeurs manquantes (Champs critiques)
+        missing_critical = df_qc[['province', 'district', 'nb_personnes', 'nb_milda_recues']].isnull().any(axis=1).sum()
+        st.metric("Fiches Incomplètes", missing_critical, delta="- À vérifier" if missing_critical > 0 else "OK", delta_color="inverse")
+
+    st.divider()
+
+    # --- SECTION DÉTAILLÉE DES ANOMALIES ---
+    tab_gap, tab_time, tab_logic = st.tabs(["📊 Complétude", "⏱️ Cohérence Temporelle", "🧠 Cohérence Logique"])
+
+    with tab_gap:
+        st.subheader("Analyse du taux de remplissage")
+        missing_pct = (df_qc.isnull().sum() / len(df_qc) * 100).sort_values(ascending=False)
+        fig_missing = px.bar(
+            x=missing_pct.index, 
+            y=missing_pct.values,
+            title="Pourcentage de valeurs manquantes par colonne",
+            labels={'x': 'Variables', 'y': '% de vide'}
         )
-    
-    with col4:
-        agents_problemes = (quality_df['score_qualite'] < 60).sum()
-        st.metric(
-            "Agents à améliorer",
-            f"{agents_problemes}/{len(quality_df)}",
-            delta=f"-{(agents_problemes/len(quality_df)*100):.0f}%" if agents_problemes > 0 else "0%"
-        )
-    
-    st.markdown("---")
-    
-    # ========== GRAPHIQUES ==========
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### 🎯 Score de qualité par agent")
-        
-        fig = px.bar(
-            quality_df,
-            x='agent',
-            y='score_qualite',
-            color='score_qualite',
-            color_continuous_scale=['#ef4444', '#f59e0b', '#10b981'],
-            labels={'agent': 'Agent', 'score_qualite': 'Score de qualité'},
-            text='score_qualite'
-        )
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        fig.update_layout(
-            xaxis_tickangle=-45,
-            showlegend=False,
-            height=400
-        )
-        fig.add_hline(y=80, line_dash="dash", line_color="green", annotation_text="Objectif 80")
-        fig.add_hline(y=60, line_dash="dash", line_color="orange", annotation_text="Seuil 60")
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.markdown("#### 📈 Répartition des scores")
-        
-        # Catégoriser les scores
-        quality_df['categorie'] = pd.cut(
-            quality_df['score_qualite'],
-            bins=[0, 60, 80, 100],
-            labels=['À améliorer (<60)', 'Acceptable (60-80)', 'Excellent (>80)']
-        )
-        
-        categorie_counts = quality_df['categorie'].value_counts()
-        
-        fig = px.pie(
-            values=categorie_counts.values,
-            names=categorie_counts.index,
-            color=categorie_counts.index,
-            color_discrete_map={
-                'À améliorer (<60)': '#ef4444',
-                'Acceptable (60-80)': '#f59e0b',
-                'Excellent (>80)': '#10b981'
-            }
-        )
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        fig.update_layout(height=400)
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # ========== ANALYSE DÉTAILLÉE PAR DIMENSION ==========
-    
-    st.markdown("### 🔬 Analyse multidimensionnelle")
-    
-    # Radar chart pour comparaison
-    selected_agents_radar = st.multiselect(
-        "Sélectionner des agents à comparer (max 5)",
-        quality_df['agent'].tolist(),
-        default=quality_df['agent'].head(3).tolist(),
-        max_selections=5
-    )
-    
-    if selected_agents_radar:
-        radar_data = quality_df[quality_df['agent'].isin(selected_agents_radar)]
-        
-        fig = go.Figure()
-        
-        dimensions = ['completeness_data', 'completeness_coords', 'coherence_servi', 
-                     'conformite', 'score_qualite']
-        labels = ['Complétude données', 'Complétude GPS', 'Cohérence', 'Conformité', 'Score global']
-        
-        for _, row in radar_data.iterrows():
-            values = [row[dim] for dim in dimensions]
-            values.append(values[0])  # Fermer le polygone
+        st.plotly_chart(fig_missing, use_container_width=True)
+
+    with tab_time:
+        st.subheader("Analyse de la cadence des enquêteurs")
+        if 'delai' in df_qc.columns:
+            fig_delai = px.box(df_qc, x='agent_name', y='delai', title="Temps écoulé entre deux ménages (minutes)")
+            fig_delai.add_hline(y=10, line_dash="dash", line_color="red", annotation_text="Seuil suspect (10 min)")
+            st.plotly_chart(fig_delai, use_container_width=True)
             
-            fig.add_trace(go.Scatterpolar(
-                r=values,
-                theta=labels + [labels[0]],
-                fill='toself',
-                name=row['agent']
-            ))
+            anomalies_temps = df_qc[df_qc['delai'] < 10][['agent_name', 'village', 'timestamp', 'delai']]
+            if not anomalies_temps.empty:
+                st.write("📋 Détails des interviews trop rapides :")
+                st.dataframe(anomalies_temps, use_container_width=True)
+
+    with tab_logic:
+        st.subheader("Vérification des incohérences MILDA")
         
-        fig.update_layout(
-            polar=dict(
-                radialaxis=dict(visible=True, range=[0, 100])
-            ),
-            showlegend=True,
-            height=500,
-            title="Comparaison multidimensionnelle"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # ========== TABLEAU DÉTAILLÉ ==========
-    
-    st.markdown("### 📋 Tableau détaillé de qualité")
-    
-    display_df = quality_df[[
-        'agent', 'nb_enquetes', 'score_qualite', 'completeness_data',
-        'completeness_coords', 'coherence_servi', 'conformite', 
-        'anomalies_gps', 'vitesse_travail'
-    ]].copy()
-    
-    display_df.columns = [
-        'Agent', 'Nb enquêtes', 'Score qualité', 'Complétude (%)',
-        'GPS complet (%)', 'Cohérence (%)', 'Conformité (%)',
-        'Anomalies GPS (%)', 'Vitesse (enq/h)'
-    ]
-    
-    # Appliquer un style conditionnel
-    def color_score(val):
-        if val >= 80:
-            color = '#d1fae5'
-        elif val >= 60:
-            color = '#fef3c7'
-        else:
-            color = '#fee2e2'
-        return f'background-color: {color}'
-    
-    styled_df = display_df.style.applymap(
-        color_score,
-        subset=['Score qualité']
-    )
-    
-    st.dataframe(styled_df, use_container_width=True)
-    
-    # ========== ALERTES ET RECOMMANDATIONS ==========
-    
-    st.markdown("---")
-    st.markdown("### 🚨 Alertes et recommandations")
-    
-    # Agents avec problèmes
-    agents_problemes = quality_df[quality_df['score_qualite'] < 60]
-    
-    if len(agents_problemes) > 0:
-        st.error(f"⚠️ **{len(agents_problemes)} agent(s)** nécessite(nt) une attention particulière")
-        
-        for _, agent in agents_problemes.iterrows():
-            with st.expander(f"🔴 {agent['agent']} - Score: {agent['score_qualite']:.1f}/100"):
-                recommendations = []
-                
-                if agent['completeness_data'] < 70:
-                    recommendations.append("📝 **Complétude insuffisante** : Vérifier que tous les champs sont remplis")
-                
-                if agent['completeness_coords'] < 70:
-                    recommendations.append("📍 **GPS incomplet** : S'assurer que le GPS est activé")
-                
-                if agent['anomalies_gps'] > 10:
-                    recommendations.append("🗺️ **Anomalies GPS détectées** : Vérifier la calibration du GPS")
-                
-                if agent['coherence_servi'] < 70:
-                    recommendations.append("🔢 **Incohérences dans les données** : Revoir la logique de saisie")
-                
-                if agent['conformite'] < 60:
-                    recommendations.append("⚖️ **Non-conformité élevée** : Formation sur les normes de distribution")
-                
-                for rec in recommendations:
-                    st.markdown(f"- {rec}")
-    
-    else:
-        st.success("✅ Tous les agents ont un score de qualité satisfaisant (≥60)")
-    
-    # Meilleurs agents
-    agents_excellents = quality_df[quality_df['score_qualite'] >= 80]
-    
-    if len(agents_excellents) > 0:
-        st.success(f"🌟 **{len(agents_excellents)} agent(s) excellent(s)** (score ≥ 80)")
-        
-        with st.expander("Voir les agents excellents"):
-            for _, agent in agents_excellents.iterrows():
-                st.markdown(f"- **{agent['agent']}** : {agent['score_qualite']:.1f}/100")
+        # Exemple : Plus de moustiquaires reçues que de personnes dans le ménage x 2
+        if 'milda_per_person' in df_qc.columns:
+            incoherences = df_qc[df_qc['milda_per_person'] > 1.5] # Plus de 1.5 MILDA par personne est très suspect
+            if not incoherences.empty:
+                st.error(f"🚨 {len(incoherences)} ménages ont reçu un nombre anormalement élevé de MILDA par rapport à leur taille.")
+                st.dataframe(incoherences[['agent_name', 'village', 'nb_personnes', 'nb_milda_recues', 'milda_per_person']])
+            else:
+                st.success("✅ Aucune incohérence majeure détectée entre taille ménage et moustiquaires.")
+
+        # Vérification des dates futures (erreurs de saisie tablette)
+        future_dates = df_qc[df_qc['date_enquete'] > datetime.now()]
+        if not future_dates.empty:
+            st.warning(f"📅 {len(future_dates)} fiches ont des dates dans le futur.")
+            st.dataframe(future_dates[['agent_name', 'date_enquete', 'village']])
 
 
 ################################################################################
