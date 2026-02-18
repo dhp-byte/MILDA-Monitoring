@@ -10,4 +10,4 @@ scipy==1.14.1
 folium==0.20.0
 streamlit-folium==0.26.1
 requests==2.33.0
-koboextractor==0.2.1
+koboextractor==0.1.1
