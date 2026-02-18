@@ -1906,6 +1906,18 @@ def main():
                                     data.columns = [c.split('/')[-1] for c in data.columns]
                                     st.write("Colonnes détectées dans KoBo :", list(data.columns))
 
+                                    st.subheader("📋 Aperçu des données extraites de KoBo")
+    
+    # Affiche le DataFrame avec une barre de recherche et des filtres
+                                    st.dataframe(
+                                        st.session_state.data, 
+                                        use_container_width=True, # Prend toute la largeur
+                                        column_config={           # Optionnel : renommer l'affichage des colonnes
+                                            "menage_servi": "Servi ?",
+                                            "S1Q02": "Taille Ménage"
+                                        }
+                                    )
+
                                     data, stats = process_raw_kobo_data(data)
                                     # Traitement et stockage
                                     st.session_state.data = data
