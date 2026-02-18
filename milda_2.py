@@ -1819,7 +1819,7 @@ def main():
     # En-tête
     render_header()
     
-    # Sidebar
+    # --- 1. CONFIGURATION SIDEBAR (Connexion KoBo) ---
     with st.sidebar:
         st.header("🔑 Connexion KoBo")
         server_base = st.selectbox("Serveur", 
@@ -1827,218 +1827,100 @@ def main():
         
         username = st.text_input("Nom d'utilisateur")
         password = st.text_input("Mot de passe", type="password")
-        
-        # Bouton de connexion
         connect_button = st.button("Se connecter au compte")
+        
+        st.divider()
+        st.header("📂 Ou Import Excel")
+        uploaded_file = st.file_uploader("Choisir un fichier Excel", type=['xlsx', 'xls'])
 
-    # Initialisation de la session pour stocker le token et le DataFrame
+    # Initialisation des variables de session
     if 'kobo_token' not in st.session_state:
         st.session_state.kobo_token = None
-    if 'df' not in st.session_state:
-        st.session_state.df = None
+    if 'data' not in st.session_state:
+        st.session_state.data = None
+    if 'tables' not in st.session_state:
+        st.session_state.tables = None
 
-    # --- 2. GESTION DE LA CONNEXION ---
-    if connect_button:
-        if username and password:
-            with st.spinner("Authentification en cours..."):
-                token = get_kobo_token(server_base, username, password)
-                if token:
-                    st.session_state.kobo_token = token
-                    st.success("✅ Connexion réussie !")
-        else:
-            st.warning("Veuillez remplir les deux champs.")
+    # --- 2. LOGIQUE DE CONNEXION KOBO ---
+    if connect_button and username and password:
+        with st.spinner("Authentification en cours..."):
+            token = get_kobo_token(server_base, username, password)
+            if token:
+                st.session_state.kobo_token = token
+                st.success("✅ Connexion réussie !")
 
-    # --- 3. EXTRACTION DES DONNÉES (Si connecté) ---
-    # --- DANS VOTRE FONCTION MAIN, APRÈS LA CONNEXION ---
-if st.session_state.kobo_token:
-    headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
-    
-    try:
-        # Récupération de la liste des formulaires (Assets)
-        assets_url = f"{server_base}/api/v2/assets.json"
-        res_assets = requests.get(assets_url, headers=headers)
-        
-        if res_assets.status_code == 200:
-            assets_data = res_assets.json().get('results', [])
-            forms = {a['name']: a['uid'] for a in assets_data if a['asset_type'] == 'survey'}
+    # --- 3. LOGIQUE D'EXTRACTION KOBO (Indantée dans main) ---
+    if st.session_state.kobo_token:
+        headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
+        try:
+            assets_url = f"{server_base}/api/v2/assets.json"
+            res_assets = requests.get(assets_url, headers=headers)
             
-            selected_form = st.selectbox("Choisir le formulaire :", ["-- Sélectionner --"] + list(forms.keys()))
-            
-            if selected_form != "-- Sélectionner --":
-                if st.button("📥 Charger les données"):
-                    with st.spinner('Extraction des données depuis KoBo...'):
-                        uid = forms[selected_form]
-                        
-                        # URL pour récupérer les données JSON
-                        data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
-                        res_data = requests.get(data_url, headers=headers)
-                        
-                        if res_data.status_code == 200:
-                            results = res_data.json().get('results', [])
+            if res_assets.status_code == 200:
+                assets_data = res_assets.json().get('results', [])
+                forms = {a['name']: a['uid'] for a in assets_data if a['asset_type'] == 'survey'}
+                
+                selected_form = st.selectbox("Choisir le formulaire :", ["-- Sélectionner --"] + list(forms.keys()))
+                
+                if selected_form != "-- Sélectionner --":
+                    if st.button("📥 Charger les données KoBo"):
+                        with st.spinner('Extraction...'):
+                            uid = forms[selected_form]
+                            data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
+                            res_data = requests.get(data_url, headers=headers)
                             
-                            if results:
-                                # Transformation en DataFrame
-                                data = pd.DataFrame(results)
-                                
-                                # Nettoyage des noms de colonnes (enlève les préfixes de groupes)
-                                data.columns = [c.split('/')[-1] for c in data.columns]
-                                
-                                st.session_state.data = data
-                                st.success(f"✅ {len(data)} enregistrements chargés !")
-                                st.rerun()
-                            else:
-                                st.warning("Le formulaire est vide.")
-                        else:
-                            st.error(f"Erreur lors de la récupération des données ({res_data.status_code})")
-        else:
-            st.error("Impossible de récupérer la liste des projets.")
-            
-    except Exception as e:
-        st.error(f"Une erreur est survenue : {e}")
+                            if res_data.status_code == 200:
+                                results = res_data.json().get('results', [])
+                                if results:
+                                    data = pd.DataFrame(results)
+                                    # Nettoyage des colonnes KoBo
+                                    data.columns = [c.split('/')[-1] for c in data.columns]
+                                    
+                                    # Traitement et stockage
+                                    st.session_state.data = data
+                                    st.session_state.tables = generate_analysis_tables(data)
+                                    st.success(f"✅ {len(data)} enregistrements chargés !")
+                                    st.rerun()
+            else:
+                st.error("Impossible de récupérer la liste des projets KoBo.")
+        except Exception as e:
+            st.error(f"Erreur KoBo : {e}")
 
-    # --- 3. AFFICHAGE DES ONGLETS (Si les données sont chargées) ---
+    # --- 4. LOGIQUE IMPORT EXCEL (Si pas de KoBo) ---
+    if uploaded_file and st.session_state.data is None:
+        with st.spinner("🔄 Chargement du fichier Excel..."):
+            data, stats = load_and_process_data(uploaded_file)
+            st.session_state.data = data
+            st.session_state.tables = generate_analysis_tables(data)
+
+    # --- 5. AFFICHAGE DES ONGLETS (Si données présentes) ---
     if st.session_state.data is not None:
-        # Nettoyage rapide des colonnes (Kobo ajoute souvent des préfixes ou des /)
-        data = st.session_state.data.copy()
-        
-        st.markdown("---")
-        
-        st.markdown("### 📊 Indicateurs suivis")
-        st.markdown("""
-        - ✅ % ménages servis
-        - ✅ % distribution correcte
-        - ✅ % ménages marqués
-        - ✅ % ménages informés
-        - ✅ Analyse de la distribution
-        """)
-        
-        st.markdown("---")
-        
-        st.markdown("### 💡 À propos")
-        st.markdown("""
-        **Version:** 1.0
-        **Date:** 2026  
-        **Objectif:** 80% de couverture
-        """)
-        
-        st.markdown("---")
-        
-        # Statistiques système (si données chargées)
-        if 'data' in st.session_state and 'stats' in st.session_state:
-            stats = st.session_state['stats']
-            st.markdown("### 📈 Statistiques")
-            st.metric("Enregistrements", stats.get('total_rows', 0))
-            st.metric("Provinces", stats.get('total_provinces', 0))
-            st.metric("Districts", stats.get('total_districts', 0))
-            
-            date_range = stats.get('date_range', ('N/A', 'N/A'))
-            st.caption(f"Période: {date_range[0]} → {date_range[1]}")
-    
-    # Vérification du fichier
-    if not uploaded_file:
-        st.info("👆 Veuillez importer un fichier Excel pour commencer l'analyse")
-        
-        # Afficher un exemple de structure attendue
-        st.markdown("### 📋 Structure de données attendue")
-        
-        example_cols = [
-            "province", "district", "village", "date_enquete",
-            "menage_servi", "nb_personnes", "nb_milda_recues",
-            "verif_cle", "menage_marque", "sensibilise"
-        ]
-        
-        st.code("\n".join(example_cols), language="text")
-        
-        st.markdown("""
-        **Colonnes essentielles:**
-        - 🗺️ Géographiques: province, district, village
-        - 📅 Temporelles: date_enquete
-        - 📊 Distribution: menage_servi, nb_personnes, nb_milda_recues
-        - ✅ Qualité: verif_cle, menage_marque, sensibilise
-        """)
-            return
-    
-    # Chargement des données
-    with st.spinner("🔄 Chargement et traitement des données..."):
-        data, stats = load_and_process_data(
-            uploaded_file,
-            sheet_name if 'sheet_name' in locals() and sheet_name else None
-        )
-        
-        if data.empty:
-            st.error("❌ Impossible de charger les données. Vérifier le format du fichier.")
-            return
-        
-        # Stocker en session
-        st.session_state['data'] = data
-        st.session_state['stats'] = stats
-        
-        # Générer les tableaux d'analyse
-        tables = generate_analysis_tables(data)
-        st.session_state['tables'] = tables
-    
-    # Navigation par onglets
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "🏠 Dashboard", 
-    "🔍 Analyse", 
-    "🗺️ Cartographie", 
-    "🏃 Suivi Agents", # Nouvel onglet
-    "🛡️ Qualité",      # Nouvel onglet
-    "📊 Statistiques",
-    "📥 Export",
-    "📥 Rapport Final"
-])
-    
-    with tab1:
-        page_dashboard(data, tables)
-    
-    with tab2:
-        page_analysis(data, tables)
-    
-    with tab3:
-        page_maps(data)
+        data = st.session_state.data
+        tables = st.session_state.tables
 
-    with tab4:
-        page_agent_tracking(data)
-        
-    with tab5:
-        page_data_quality(data)
-        
-    with tab6:
-        page_statistics(data)
-    
-    with tab7:
-        page_export(data, tables)
-    with tab8:
-        st.markdown("## 📊 Génération du Rapport de Synthèse")
-        st.write("""
-        Cet outil compile automatiquement toutes les données de dénombrement et de distribution 
-        pour générer un document Word prêt pour l'archivage ou la présentation officielle.
-        """)
-        
-        # Appel de votre fonction de bouton
-        download_automatic_report_button(data, tables)
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+            "🏠 Dashboard", "🔍 Analyse", "🗺️ Cartographie", 
+            "🏃 Suivi Agents", "🛡️ Qualité", "📊 Statistiques", 
+            "📥 Export", "📥 Rapport Final"
+        ])
 
-        # Petit conseil visuel
-        st.divider()
-        st.markdown("""
-        **Note :** Le rapport inclut :
-        - Les caractéristiques des chefs de ménage.
-        - Les indicateurs de performance par Centre de Santé.
-        - L'analyse des écarts de distribution (Sur-distribution / Sous-distribution).
-        - Les recommandations automatiques basées sur les scores.
-        """)
+        with tab1: page_dashboard(data, tables)
+        with tab2: page_analysis(data, tables)
+        with tab3: page_maps(data)
+        with tab4: page_agent_tracking(data)
+        with tab5: page_data_quality(data)
+        with tab6: page_statistics(data)
+        with tab7: page_export(data, tables)
+        with tab8:
+            st.markdown("## 📊 Rapport de Synthèse")
+            download_automatic_report_button(data, tables)
     
+    else:
+        # Message d'accueil si rien n'est chargé
+        st.info("👆 Connectez-vous à KoBo ou importez un fichier Excel pour commencer.")
+        st.markdown("### 📋 Structure attendue")
+        st.code("province, district, village, date_enquete, menage_servi, nb_milda_recues...", language="text")
+
     # Footer
     st.markdown("---")
-    st.markdown(f"""
-        <div style='text-align: center; color: #666; padding: 20px;'>
-            <p><strong>🦟 MILDA Dashboard v1.0</strong></p>
-            <p>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}</p>
-            <p style='font-size: 0.9rem;'>Système de monitorage et d'analyse de la distribution des moustiquaires</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-
-if __name__ == "__main__":
-    main()
+    st.caption(f"🦟 MILDA Dashboard | Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
