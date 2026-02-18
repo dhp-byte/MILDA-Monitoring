@@ -1349,117 +1349,75 @@ def page_agent_tracking(data: pd.DataFrame):
 ################################################################################
 
 def page_data_quality(data: pd.DataFrame):
-    st.markdown("## 🔍 Qualité des Données par Agent")
+    st.markdown("## 🛡️ Qualité des Données par Agent")
     
     if 'agent_name' not in data.columns:
-        st.error("❌ Colonne 'agent_name' manquante dans les données")
+        st.error("❌ Colonne 'agent_name' manquante.")
         return
     
-    # ========== PRÉPARATION ET NETTOYAGE DES DONNÉES (CORRECTION) ==========
     df_qc = data.copy()
     
-    # 1. Conversion forcée de la date (pour éviter l'AttributeError)
-    if 'date_enquete' in df_qc.columns:
-        df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
-    
-    # 2. Création ou conversion du timestamp
-    if 'timestamp' not in df_qc.columns and 'date_enquete' in df_qc.columns:
-        if 'heure_interview' in df_qc.columns:
-            # On combine date et heure
-            df_qc['timestamp'] = pd.to_datetime(
-                df_qc['date_enquete'].dt.date.astype(str) + ' ' + df_qc['heure_interview'].astype(str),
-                errors='coerce'
-            )
-        else:
-            df_qc['timestamp'] = df_qc['date_enquete']
-    elif 'timestamp' in df_qc.columns:
-        df_qc['timestamp'] = pd.to_datetime(df_qc['timestamp'], errors='coerce')
+    # Conversion forcée pour éviter AttributeError
+    df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
+    if 'heure_interview' in df_qc.columns:
+        df_qc['timestamp'] = pd.to_datetime(
+            df_qc['date_enquete'].dt.date.astype(str) + ' ' + df_qc['heure_interview'].astype(str),
+            errors='coerce'
+        )
+    else:
+        df_qc['timestamp'] = df_qc['date_enquete']
 
-    # ========== CALCULS DES INDICATEURS DE QUALITÉ ==========
-    
     def calculate_agent_quality(agent_df):
         total = len(agent_df)
         if total == 0: return None
         
         # Complétude
-        completeness_coords = (
-            agent_df['latitude'].notna().sum() + agent_df['longitude'].notna().sum()
-        ) / (2 * total) * 100
-        completeness_data = agent_df.notna().mean(axis=1).mean() * 100
+        comp_gps = (agent_df['latitude'].notna().sum()) / total * 100
+        comp_data = agent_df.notna().mean(axis=1).mean() * 100
         
-        # Cohérence
-        coherence_servi = 100 # Par défaut
-        if 'menage_servi' in agent_df.columns and 'nb_milda_recues' in agent_df.columns:
-            servis = agent_df[agent_df['menage_servi'] == 'Oui']
-            if len(servis) > 0:
-                coherence_servi = (servis['nb_milda_recues'].notna().sum() / len(servis)) * 100
-        
-        # Anomalies GPS (Tchad)
-        anomalies_gps = 0
-        if 'latitude' in agent_df.columns and 'longitude' in agent_df.columns:
-            valid_coords = agent_df.dropna(subset=['latitude', 'longitude'])
-            if len(valid_coords) > 0:
-                valid_tchad = (
-                    (valid_coords['latitude'] >= 7.0) & (valid_coords['latitude'] <= 24.0) &
-                    (valid_coords['longitude'] >= 13.0) & (valid_coords['longitude'] <= 24.0)
-                )
-                anomalies_gps = ((~valid_tchad).sum() / len(valid_coords)) * 100
-        
-        # Doublons temporels et Vitesse (SÉCURISÉ)
-        doublons_temps = 0
-        vitesse_travail = 0
-        # On ne calcule que si timestamp est valide (type datetime)
-        if 'timestamp' in agent_df.columns and not agent_df['timestamp'].isnull().all():
-            clean_ts = agent_df.dropna(subset=['timestamp'])
-            if len(clean_ts) > 0:
-                doublons_temps = (clean_ts['timestamp'].duplicated().sum() / total) * 100
-                
-                if len(clean_ts) > 1:
-                    duree = (clean_ts['timestamp'].max() - clean_ts['timestamp'].min()).total_seconds() / 3600
-                    if duree > 0:
-                        vitesse_travail = total / duree
+        # Doublons et Vitesse
+        doublons = 0
+        vitesse = 0
+        valid_ts = agent_df.dropna(subset=['timestamp'])
+        if len(valid_ts) > 1:
+            doublons = (valid_ts['timestamp'].duplicated().sum() / total) * 100
+            duree = (valid_ts['timestamp'].max() - valid_ts['timestamp'].min()).total_seconds() / 3600
+            if duree > 0: vitesse = total / duree
 
-        # Score global
-        score_qualite = (
-            completeness_data * 0.40 + 
-            completeness_coords * 0.30 + 
-            (100 - anomalies_gps) * 0.20 +
-            (100 - doublons_temps) * 0.10
-        )
+        # Score calculé (Pondération)
+        score = (comp_data * 0.5) + (comp_gps * 0.3) + ((100 - doublons) * 0.2)
         
         return {
             'agent': agent_df['agent_name'].iloc[0],
             'nb_enquetes': total,
-            'completeness_data': round(completeness_data, 1),
-            'completeness_coords': round(completeness_coords, 1),
-            'coherence_servi': round(coherence_servi, 1),
-            'anomalies_gps': round(anomalies_gps, 1),
-            'doublons_temps': round(doublons_temps, 1),
-            'vitesse_travail': round(vitesse_travail, 2),
-            'score_qualite': round(score_qualite, 1)
+            'completeness_data': round(comp_data, 1),
+            'completeness_coords': round(comp_gps, 1),
+            'vitesse_travail': round(vitesse, 2),
+            'score_qualite': round(score, 1)
         }
 
-    # Calcul pour tous les agents sur df_qc (la copie convertie)
-    quality_data = []
+    # Calcul global
+    quality_results = []
     for agent in df_qc['agent_name'].dropna().unique():
-        agent_df = df_qc[df_qc['agent_name'] == agent]
-        metrics = calculate_agent_quality(agent_df)
-        if metrics: quality_data.append(metrics)
+        metrics = calculate_agent_quality(df_qc[df_qc['agent_name'] == agent])
+        if metrics: quality_results.append(metrics)
     
-    quality_df = pd.DataFrame(quality_data)
-    
-    if quality_df.empty:
-        st.warning("Aucune donnée de qualité calculable")
-        return
+    quality_df = pd.DataFrame(quality_results).sort_values('score_qualite', ascending=False)
 
-    # Tri par score (Correction du nom de colonne avec accent dans votre code initial)
-    quality_df = quality_df.sort_values('score_qualite', ascending=False).reset_index(drop=True)
+    # Affichage Metrics
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Score Moyen", f"{quality_df['score_qualite'].mean():.1f}/100")
+    c2.metric("Meilleur Score", f"{quality_df['score_qualite'].max():.1f}/100")
+    c3.metric("Nb Agents", len(quality_df))
 
-    # ========== AFFICHAGE (Identique à votre structure) ==========
-    # ... (Le reste de votre code d'affichage reste identique, 
-    # assurez-vous juste d'utiliser 'score_qualite' sans accent partout)
-    st.markdown("### 📊 Vue d'ensemble")
-    # ... (Reprenez vos colonnes de metrics et graphiques ici)
+    # Graphique des scores
+    fig_score = px.bar(quality_df, x='agent', y='score_qualite', color='score_qualite',
+                       color_continuous_scale='RdYlGn', title="Classement Qualité des Agents")
+    st.plotly_chart(fig_score, use_container_width=True)
+
+    # Tableau détaillé
+    st.markdown("### 📋 Détails de performance")
+    st.dataframe(quality_df.style.background_gradient(subset=['score_qualite'], cmap='RdYlGn'), use_container_width=True)
 
 ################################################################################
 # 3. GÉNÉRATION AUTOMATIQUE DE RAPPORT (Format Word)
@@ -1953,14 +1911,15 @@ def main():
         st.session_state['tables'] = tables
     
     # Navigation par onglets
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🏠 Dashboard", 
     "🔍 Analyse", 
     "🗺️ Cartographie", 
     "🏃 Suivi Agents", # Nouvel onglet
     "🛡️ Qualité",      # Nouvel onglet
     "📊 Statistiques",
-    "📥 Export"
+    "📥 Export",
+    "📥 Rapport Final"
 ])
     
     with tab1:
@@ -1983,6 +1942,8 @@ def main():
     
     with tab7:
         page_export(data, tables)
+    with tab8:
+        generate_automatic_report(data, tables)
     
     # Footer
     st.markdown("---")
