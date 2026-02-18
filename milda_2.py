@@ -1905,7 +1905,7 @@ def main():
                                     # Nettoyage des colonnes KoBo
                                     data.columns = [c.split('/')[-1] for c in data.columns]
 
-                                    data, stats = process_raw_kobo_data(df_raw)
+                                    data, stats = process_raw_kobo_data(data)
                                     # Traitement et stockage
                                     st.session_state.data = data
                                     st.session_state.tables = generate_analysis_tables(data)
