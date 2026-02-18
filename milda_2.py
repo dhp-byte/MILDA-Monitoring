@@ -1807,31 +1807,66 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.markdown("## ⚙️ Configuration")
+        st.header("🔌 Connexion KoboToolbox")
+        api_token = st.text_input("Clé API KoBo", type="password")
+        server_base = st.selectbox("Serveur", 
+                                  ["https://kf.kobotoolbox.org", "https://kobo.humanitarianresponse.info"])
         
-        # Upload de fichier
-        uploaded_file = st.file_uploader(
-            "📁 Importer le fichier de données",
-            type=['xlsx', 'xls'],
-            help="Sélectionner un fichier Excel contenant les données d'enquête"
-        )
-        
-        if uploaded_file:
-            # 1. Lire le fichier Excel pour extraire les noms de feuilles
-            try:
-                xls = pd.ExcelFile(uploaded_file)
-                sheet_names = xls.sheet_names
-                
-                # 2. Créer la liste déroulante (selectbox)
-                sheet_name = st.selectbox(
-                    "📄 Choisir la feuille de données",
-                    options=sheet_names,
-                    index=0,  # Par défaut, sélectionne la première feuille
-                    help="Sélectionnez la feuille qui contient les données d'enquête"
-                )
-            except Exception as e:
-                st.error(f"Erreur lors de la lecture des feuilles : {e}")
-                sheet_name = None
+        # Optionnel : bouton pour vider le cache
+        if st.button("Réinitialiser la session"):
+            st.session_state.clear()
+            st.rerun()
+
+    # Initialisation du DataFrame dans la session pour qu'il reste en mémoire
+    if 'df' not in st.session_state:
+        st.session_state.df = None
+
+    # --- 2. LOGIQUE D'EXTRACTION ---
+    if api_token:
+        try:
+            kobo = KoboExtractor(api_token, f"{server_base}/api/v2")
+            assets_data = kobo.list_assets()
+            forms = {a['name']: a['uid'] for a in assets_data['results'] if a['asset_type'] == 'survey'}
+
+            if forms:
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    selected_form_name = st.selectbox("Sélectionnez votre formulaire :", list(forms.keys()))
+                with col2:
+                    st.write("##") # Alignement
+                    if st.button("🚀 Charger les données", use_container_width=True):
+                        with st.spinner('Extraction et transformation des données...'):
+                            asset = kobo.get_asset(forms[selected_form_name])
+                            choice_lists = kobo.get_choices(asset)
+                            questions = kobo.get_questions(asset)
+                            raw_data = kobo.get_data(forms[selected_form_name])
+
+                            labeled_results = []
+                            for row in raw_data.get('results', []):
+                                labeled_row = kobo.label_result(
+                                    unlabeled_result=row, 
+                                    choice_lists=choice_lists, 
+                                    questions=questions,
+                                    unpack_multiples=True
+                                )
+                                labeled_results.append(labeled_row)
+                            
+                            if labeled_results:
+                                # Sauvegarde dans le session_state
+                                st.session_state.df = pd.DataFrame(labeled_results)
+                                st.success(f"✅ {len(st.session_state.df)} soumissions chargées !")
+                            else:
+                                st.warning("Ce formulaire est vide.")
+            
+        except Exception as e:
+            st.error(f"Erreur de connexion : {e}")
+    else:
+        st.info("👋 Veuillez saisir votre clé API KoBo dans la barre latérale pour commencer.")
+
+    # --- 3. AFFICHAGE DES ONGLETS (Si les données sont chargées) ---
+    if st.session_state.df is not None:
+        # Nettoyage rapide des colonnes (Kobo ajoute souvent des préfixes ou des /)
+        data = st.session_state.df.copy()
         
         st.markdown("---")
         
