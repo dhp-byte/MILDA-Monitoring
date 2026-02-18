@@ -1253,389 +1253,96 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     summary_df.columns = ['Valeur']
     st.dataframe(summary_df, use_container_width=True)
 
-
-################################################################################
-# 1. FONCTION page_agent_tracking() CORRIGÉE
-################################################################################
-
-def haversine_distance(lat1, lon1, lat2, lon2):
-    """Calcule la distance entre deux points GPS en kilomètres"""
-    R = 6371  # Rayon de la Terre en km
-    
-    lat1_rad = math.radians(lat1)
-    lat2_rad = math.radians(lat2)
-    delta_lat = math.radians(lat2 - lat1)
-    delta_lon = math.radians(lon2 - lon1)
-    
-    a = math.sin(delta_lat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    
-    return R * c
-
-
 def page_agent_tracking(data: pd.DataFrame):
-    """
-    Page de suivi géographique des agents - VERSION CORRIGÉE
+    st.markdown("## 🏃 Suivi du parcours des agents")
     
-    Corrections apportées :
-    - Points de départ (vert) et d'arrivée (rouge) clairement visibles
-    - Libellés d'heures affichés sur chaque point
-    - Marqueurs améliorés avec icônes distinctives
-    - Popup enrichis avec toutes les informations
-    """
+    # 1. Menu de configuration dans la barre latérale ou en haut
+    col_c1, col_c2 = st.columns([2, 1])
+    with col_c2:
+        choix_carte = st.selectbox(
+            "🗺️ Style de la carte",
+            ["Satellite (Détaillé)", "Clair (Rapport)", "Sombre (Épuré)", "Rues (Standard)"],
+            help="Le mode Satellite permet de voir les habitations."
+        )
+
+    # 2. Préparation des données
+    df_track = data.copy()
+    df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
     
-    st.markdown("## 🗺️ Suivi du Parcours des Agents")
-    
-    # Vérification des colonnes nécessaires
-    required_cols = ['latitude', 'longitude', 'agent_name']
-    missing_cols = [col for col in required_cols if col not in data.columns]
-    
-    if missing_cols:
-        st.error(f"❌ Colonnes manquantes : {', '.join(missing_cols)}")
-        return
-    
-    # Filtrer les données avec coordonnées valides
-    df_track = data.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
-    
-    if len(df_track) == 0:
-        st.warning("⚠️ Aucune donnée de localisation disponible")
-        return
-    
-    # Conversion de la date/heure
-    if 'date_enquete' in df_track.columns:
-        df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
-    else:
-        # Évite les erreurs quand la colonne n'est pas présente dans les données source
-        df_track['date_enquete'] = pd.NaT
-    
-    # Créer un timestamp pour le tri
     if 'heure_interview' in df_track.columns:
         df_track['timestamp'] = pd.to_datetime(
-            df_track['date_enquete'].astype(str) + ' ' + df_track['heure_interview'].astype(str),
-            errors='coerce',
-            utc=True
-        ).dt.tz_convert(None)
-    elif 'date_enquete' in df_track.columns:
-        df_track['timestamp'] = pd.to_datetime(df_track['date_enquete'], errors='coerce', utc=True).dt.tz_convert(None)
+            df_track['date_enquete'].dt.date.astype(str) + ' ' + df_track['heure_interview'].astype(str),
+            errors='coerce'
+        )
     else:
-        df_track['timestamp'] = pd.Timestamp.now()
+        df_track['timestamp'] = df_track['date_enquete']
 
-    # Force un format datetime homogène pour les opérations .dt
-    df_track['timestamp'] = pd.to_datetime(df_track['timestamp'], errors='coerce', utc=True).dt.tz_convert(None)
+    df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
+    df_track['heure_texte'] = df_track['timestamp'].apply(lambda x: x.strftime('%H:%M'))
+    df_track = df_track.sort_values(['agent_name', 'timestamp'])
+
+    # 3. Sélection de l'agent
+    agents = sorted(df_track['agent_name'].unique())
+    with col_c1:
+        selected_agent = st.selectbox("👤 Sélectionner un enquêteur", agents)
     
-    # Trier par agent et timestamp
-    df_track = df_track.sort_values(['agent_name', 'timestamp']).reset_index(drop=True)
-    
-    st.info(f"📍 **{len(df_track)} points GPS** collectés par **{df_track['agent_name'].nunique()} agents**")
-    
-    # Interface de sélection
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns([2, 2, 1])
-    
-    with col1:
-        agents = sorted(df_track['agent_name'].dropna().unique())
-        selected_agent = st.selectbox("🧑‍💼 Sélectionner un agent", agents)
-    
-    with col2:
-        # Filtre de date
-        if df_track['date_enquete'].notna().any():
-            dates_available = df_track['date_enquete'].dt.date.unique()
-            selected_date = st.selectbox(
-                "📅 Date",
-                ['Toutes les dates'] + sorted([d for d in dates_available if pd.notna(d)], reverse=True)
+    agent_path = df_track[df_track['agent_name'] == selected_agent].copy()
+
+    if not agent_path.empty:
+        # 4. Création de la figure
+        fig = px.line_mapbox(
+            agent_path,
+            lat="latitude",
+            lon="longitude",
+            zoom=15 if "Satellite" in choix_carte else 12,
+            height=700
+        )
+        
+        # 5. Ajout des points d'enquête avec heures en NOIR
+        fig.add_trace(go.Scattermapbox(
+            lat=agent_path['latitude'],
+            lon=agent_path['longitude'],
+            mode='markers+text',
+            marker=go.scattermapbox.Marker(size=12, color='red'),
+            text=agent_path['heure_texte'],
+            textposition="top right",
+            textfont=dict(size=13, color="black"),
+            name="Ménage visité"
+        ))
+
+        # 6. Ajout des marqueurs de direction (petits points noirs sur la ligne)
+        fig.add_trace(go.Scattermapbox(
+            lat=agent_path['latitude'],
+            lon=agent_path['longitude'],
+            mode='markers',
+            marker=go.scattermapbox.Marker(size=6, color='black'),
+            hoverinfo='skip',
+            showlegend=False
+        ))
+
+        # 7. Application du style de carte choisi
+        if choix_carte == "Satellite (Détaillé)":
+            fig.update_layout(
+                mapbox_style="white-bg",
+                mapbox_layers=[{
+                    "sourcetype": "raster",
+                    "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
+                }]
             )
         else:
-            selected_date = 'Toutes les dates'
-    
-    with col3:
-        show_labels = st.checkbox("🏷️ Afficher les heures", value=True)
-    
-    # Filtrer les données pour l'agent sélectionné
-    agent_data = df_track[df_track['agent_name'] == selected_agent].copy()
-    
-    if selected_date != 'Toutes les dates':
-        agent_data = agent_data[agent_data['date_enquete'].dt.date == selected_date]
-    
-    if len(agent_data) == 0:
-        st.warning(f"Aucune donnée disponible pour {selected_agent}")
-        return
-    
-    # Trier par timestamp
-    agent_data = agent_data.sort_values('timestamp').reset_index(drop=True)
-    
-    # Calculs de distance
-    agent_data['distance_depuis_precedent'] = 0.0
-    for i in range(1, len(agent_data)):
-        lat1, lon1 = agent_data.loc[i-1, ['latitude', 'longitude']]
-        lat2, lon2 = agent_data.loc[i, ['latitude', 'longitude']]
-        agent_data.loc[i, 'distance_depuis_precedent'] = haversine_distance(lat1, lon1, lat2, lon2)
-    
-    agent_data['distance_cumulee'] = agent_data['distance_depuis_precedent'].cumsum()
-    
-    # Préparer les heures pour affichage
-    agent_data['heure_texte'] = agent_data['timestamp'].dt.strftime('%H:%M')
-    
-    # Afficher les statistiques
-    st.markdown("---")
-    st.markdown(f"### 📊 Statistiques - {selected_agent}")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Points d'enquête", len(agent_data))
-    
-    with col2:
-        distance_totale = agent_data['distance_depuis_precedent'].sum()
-        st.metric("Distance totale", f"{distance_totale:.2f} km")
-    
-    with col3:
-        if len(agent_data) > 1:
-            duree = (agent_data['timestamp'].max() - agent_data['timestamp'].min()).total_seconds() / 3600
-            st.metric("Durée", f"{duree:.1f} heures")
-        else:
-            st.metric("Durée", "N/A")
-    
-    with col4:
-        if len(agent_data) > 1 and distance_totale > 0:
-            vitesse_moy = distance_totale / duree if duree > 0 else 0
-            st.metric("Vitesse moyenne", f"{vitesse_moy:.1f} km/h")
-        else:
-            st.metric("Vitesse moyenne", "N/A")
-    
-    st.markdown("---")
-    
-    # ========== CRÉATION DE LA CARTE AMÉLIORÉE ==========
-    
-    # Centre de la carte
-    center_lat = agent_data['latitude'].mean()
-    center_lon = agent_data['longitude'].mean()
-    
-    # Créer la carte
-    m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=13,
-        tiles='OpenStreetMap'
-    )
-    
-    # Ajouter le tracé de la route (ligne bleue)
-    coordinates = agent_data[['latitude', 'longitude']].values.tolist()
-    
-    folium.PolyLine(
-        coordinates,
-        color='#0066ff',
-        weight=4,
-        opacity=0.7,
-        popup=f"Parcours de {selected_agent}"
-    ).add_to(m)
-    
-    # ========== POINTS INTERMÉDIAIRES ==========
-    for idx, row in agent_data.iterrows():
-        is_first = (idx == agent_data.index[0])
-        is_last = (idx == agent_data.index[-1])
-        
-        # Construire le popup avec toutes les informations
-        popup_html = f"""
-        <div style="font-family: Arial; min-width: 200px;">
-            <h4 style="margin: 0 0 10px 0; color: #333;">
-                {'🟢 DÉPART' if is_first else '🔴 ARRIVÉE' if is_last else f'📍 Point {idx + 1}'}
-            </h4>
-            <table style="width: 100%; font-size: 12px;">
-                <tr>
-                    <td style="padding: 3px;"><b>Heure:</b></td>
-                    <td style="padding: 3px;">{row['heure_texte']}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 3px;"><b>Village:</b></td>
-                    <td style="padding: 3px;">{row.get('village', 'N/A')}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 3px;"><b>District:</b></td>
-                    <td style="padding: 3px;">{row.get('district', 'N/A')}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 3px;"><b>Distance:</b></td>
-                    <td style="padding: 3px;">{row['distance_cumulee']:.2f} km</td>
-                </tr>
-                <tr>
-                    <td style="padding: 3px;"><b>Servi:</b></td>
-                    <td style="padding: 3px;">{row.get('menage_servi', 'N/A')}</td>
-                </tr>
-            </table>
-        </div>
-        """
-        
-        if is_first:
-            # ========== MARQUEUR DE DÉPART (VERT) ==========
-            folium.Marker(
-                location=[row['latitude'], row['longitude']],
-                popup=folium.Popup(popup_html, max_width=300),
-                tooltip=f"🟢 DÉPART - {row['heure_texte']}",
-                icon=folium.Icon(
-                    color='green',
-                    icon='play',
-                    prefix='fa'
-                )
-            ).add_to(m)
-            
-            # Libellé d'heure pour le départ
-            if show_labels:
-                folium.CircleMarker(
-                    location=[row['latitude'], row['longitude']],
-                    radius=1,
-                    color='transparent',
-                    fill=False,
-                    popup=folium.Popup(f"""
-                        <div style="
-                            background-color: rgba(40, 167, 69, 0.95);
-                            color: white;
-                            padding: 5px 10px;
-                            border-radius: 5px;
-                            font-weight: bold;
-                            font-size: 13px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                        ">
-                            🟢 {row['heure_texte']}
-                        </div>
-                    """, max_width=150, show=True)
-                ).add_to(m)
-        
-        elif is_last:
-            # ========== MARQUEUR D'ARRIVÉE (ROUGE) ==========
-            folium.Marker(
-                location=[row['latitude'], row['longitude']],
-                popup=folium.Popup(popup_html, max_width=300),
-                tooltip=f"🔴 ARRIVÉE - {row['heure_texte']}",
-                icon=folium.Icon(
-                    color='red',
-                    icon='stop',
-                    prefix='fa'
-                )
-            ).add_to(m)
-            
-            # Libellé d'heure pour l'arrivée
-            if show_labels:
-                folium.CircleMarker(
-                    location=[row['latitude'], row['longitude']],
-                    radius=1,
-                    color='transparent',
-                    fill=False,
-                    popup=folium.Popup(f"""
-                        <div style="
-                            background-color: rgba(220, 53, 69, 0.95);
-                            color: white;
-                            padding: 5px 10px;
-                            border-radius: 5px;
-                            font-weight: bold;
-                            font-size: 13px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                        ">
-                            🔴 {row['heure_texte']}
-                        </div>
-                    """, max_width=150, show=True)
-                ).add_to(m)
-        
-        else:
-            # ========== POINTS INTERMÉDIAIRES (BLEU) ==========
-            # Couleur selon le statut du ménage
-            if row.get('menage_servi') == 'Oui':
-                if row.get('verif_cle') == 'Oui':
-                    marker_color = 'lightgreen'
-                else:
-                    marker_color = 'orange'
-            else:
-                marker_color = 'lightred'
-            
-            folium.CircleMarker(
-                location=[row['latitude'], row['longitude']],
-                radius=7,
-                color='#0066ff',
-                fill=True,
-                fillColor=marker_color,
-                fillOpacity=0.8,
-                weight=2,
-                popup=folium.Popup(popup_html, max_width=300),
-                tooltip=f"Point {idx + 1} - {row['heure_texte']}"
-            ).add_to(m)
-            
-            # Libellé d'heure pour points intermédiaires
-            if show_labels:
-                folium.Marker(
-                    location=[row['latitude'], row['longitude']],
-                    icon=folium.DivIcon(html=f"""
-                        <div style="
-                            background-color: rgba(255, 255, 255, 0.95);
-                            color: #333;
-                            padding: 3px 8px;
-                            border-radius: 4px;
-                            font-size: 11px;
-                            font-weight: bold;
-                            border: 1px solid #0066ff;
-                            white-space: nowrap;
-                            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-                            transform: translate(-50%, -120%);
-                        ">
-                            {row['heure_texte']}
-                        </div>
-                    """)
-                ).add_to(m)
-    
-    # Ajouter une légende
-    legend_html = """
-    <div style="
-        position: fixed;
-        bottom: 50px;
-        right: 50px;
-        background-color: white;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-        z-index: 1000;
-        font-family: Arial;
-        font-size: 12px;
-    ">
-        <h4 style="margin: 0 0 10px 0; font-size: 14px;">Légende</h4>
-        <div><span style="color: green; font-size: 16px;">⬤</span> Point de départ</div>
-        <div><span style="color: red; font-size: 16px;">⬤</span> Point d'arrivée</div>
-        <div><span style="color: lightgreen; font-size: 16px;">⬤</span> Servi correctement</div>
-        <div><span style="color: orange; font-size: 16px;">⬤</span> Servi (non conforme)</div>
-        <div><span style="color: lightcoral; font-size: 16px;">⬤</span> Non servi</div>
-        <div style="margin-top: 10px;"><span style="color: #0066ff;">━━━</span> Parcours</div>
-    </div>
-    """
-    m.get_root().html.add_child(folium.Element(legend_html))
-    
-    # Afficher la carte
-    st_folium(m, width=1400, height=700)
-    
-    # Tableau détaillé du parcours
-    st.markdown("---")
-    st.markdown("### 📋 Détail du parcours")
-    
-    display_cols = ['heure_texte', 'village', 'district', 'menage_servi', 
-                   'distance_depuis_precedent', 'distance_cumulee']
-    display_cols = [col for col in display_cols if col in agent_data.columns]
-    
-    display_df = agent_data[display_cols].copy()
-    display_df.columns = ['Heure', 'Village', 'District', 'Ménage servi', 
-                         'Distance (km)', 'Distance cumulée (km)']
-    
-    st.dataframe(display_df, use_container_width=True)
-    
-    # Graphique de progression
-    st.markdown("---")
-    st.markdown("### 📈 Progression de la distance")
-    
-    fig = px.line(
-        agent_data,
-        x=agent_data.index,
-        y='distance_cumulee',
-        labels={'x': 'Point d\'enquête', 'distance_cumulee': 'Distance cumulée (km)'},
-        title=f'Évolution de la distance parcourue - {selected_agent}'
-    )
-    fig.update_traces(line_color='#0066ff', line_width=3)
-    st.plotly_chart(fig, use_container_width=True)
+            styles = {
+                "Clair (Rapport)": "carto-positron",
+                "Sombre (Épuré)": "carto-darkmatter",
+                "Rues (Standard)": "open-street-map"
+            }
+            fig.update_layout(mapbox_style=styles[choix_carte])
 
+        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=True)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Petit tableau chronologique en dessous pour vérification
+        with st.expander("📄 Voir le journal de bord de l'agent"):
+            st.dataframe(agent_path[['timestamp', 'province', 'district', 'village', 'nb_personnes']], use_container_width=True)
 
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
