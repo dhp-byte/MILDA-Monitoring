@@ -1707,7 +1707,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
 
     doc.add_paragraph("Le graphique ci-dessous présente la répartition des écarts constatés :")
-    add_custom_diff_chart(doc, data, "Répartition des écarts de distribution par rapport à la norme")
+    add_custom_color_chart(doc, data, "Répartition des écarts de distribution par rapport à la norme")
     # On prépare une série pour le graphique (sans la ligne Total)
     #chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
     #add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
