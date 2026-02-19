@@ -1595,7 +1595,37 @@ def calculate_milda_requis_custom(nb_personnes):
     elif nb_personnes >= 5: return 3  # 5-6 pers = 3, et 7+ pers = 3
     return 0
 
+def add_custom_color_chart(document, data_series, title):
+    plt.figure(figsize=(7, 4))
+    
+    # Définition des couleurs selon la valeur de l'index (la différence)
+    colors = []
+    for val in data_series.index:
+        if val < 0: colors.append('#e74c3c') # Rouge pour sous-distribution
+        elif val == 0: colors.append('#27ae60') # Vert pour conforme
+        else: colors.append('#3498db') # Bleu pour sur-distribution
+        
+    ax = data_series.plot(kind='bar', color=colors, edgecolor='black')
+    
+    # Ajout des pourcentages au-dessus des barres
+    for p in ax.patches:
+        ax.annotate(f"{p.get_height():.1f}%", 
+                    (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center', xytext=(0, 8), 
+                    textcoords='offset points', fontsize=9, fontweight='bold')
 
+    plt.title(title, pad=20, fontweight='bold')
+    plt.ylabel('Fréquence (%)')
+    plt.ylim(0, max(data_series.max() * 1.2, 100))
+    plt.tight_layout()
+
+    # Sauvegarde et insertion
+    img_stream = io.BytesIO()
+    plt.savefig(img_stream, format='png', dpi=150)
+    plt.close()
+    img_stream.seek(0)
+    document.add_picture(img_stream, width=Inches(5.5))
+    
 def add_chart_placeholder(document, title):
     """Ajoute un espace réservé pour un graphique"""
     p = document.add_paragraph()
@@ -1655,55 +1685,32 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             create_table(doc, table_data, ['Êtes-vous le Chef de ce ménage ?', 'Effectif', 'Fréquence'])
             doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
-    # ========== ANALYSE DES RÉPONDANTS ==========
-    doc.add_heading('Tableau 2 : Proportion des répondants identique à la distribution', level=2)
+    # ========== TABLEAU : DIFFÉRENCE DES MOUSTIQUAIRES ==========
+    doc.add_heading('Tableau : Différence des moustiquaires reçues', level=2)
     
-    if 'respondant_col' in data.columns:
-        # Nettoyage et comptage
-        counts = data['respondant_col'].value_counts()
-        total = len(data)
-        
-        table_data = []
-        # On boucle sur Oui/Non pour garder l'ordre
-        for label in ['Non', 'Oui']:
-            if label in counts:
-                count = counts[label]
-                freq = (count / total) * 100
-                table_data.append([label, count, f"{freq:.2f}"])
-        
-        table_data.append(['Total', total, '100.00'])
-        
-        create_table(doc, table_data, ['Le répondant est-il le même ?', 'Effectif', 'Fréquence (%)'])
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
-    
-    
-    # ========== TABLEAU DE DIFFÉRENCE DÉTAILLÉ ==========
-    doc.add_heading('Tableau : Différence des moustiquaires reçues par rapport à la norme', level=2)
-
+    # Calcul de la différence avec la nouvelle règle
     data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
     data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
-    # Calcul des effectifs par valeur de différence
+    
+    # Comptage des fréquences
     diff_counts = data['diff_custom'].value_counts().sort_index()
-    total_records = len(data)
+    total_diff = len(data)
     
-    table_diff_data = []
-    
-    # Parcourir les valeurs uniques de différence triées
+    table_diff_rows = []
     for val, count in diff_counts.items():
-        freq = (count / total_records) * 100
-        # On affiche la valeur (ex: -1, 0, 1...)
-        table_diff_data.append([int(val), count, f"{freq:.1f}"])
+        freq = (count / total_diff * 100) if total_diff > 0 else 0
+        table_diff_rows.append([int(val), count, f"{freq:.1f}"])
     
-    # Ajouter la ligne de Total
-    table_diff_data.append(['Total', total_records, '100.0'])
+    table_diff_rows.append(['Total', total_diff, '100'])
     
-    # Création du tableau dans le document
-    create_table(doc, table_diff_data, ['Nombre de Différence', 'Effectif', 'Fréquence (%)'])
+    create_table(doc, table_diff_rows, ['Nombre de Différence', 'Effectif', 'Fréquence (%)'])
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
-    
+
+    doc.add_paragraph("Le graphique ci-dessous présente la répartition des écarts constatés :")
+    add_custom_diff_chart(doc, data, "Répartition des écarts de distribution par rapport à la norme")
     # On prépare une série pour le graphique (sans la ligne Total)
-    chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
-    add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
+    #chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
+    #add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
     doc.add_page_break()
     
     # ========== INDICATEURS DE QUALITÉ ==========
