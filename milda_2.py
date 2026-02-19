@@ -1915,6 +1915,7 @@ def main():
                                     # Traitement et stockage
                                     st.session_state.data = data
                                     st.session_state.tables = generate_analysis_tables(data)
+                                    st.write(st.session_state.tables)
                                     st.success(f"✅ {len(data)} enregistrements chargés !")
                                     st.rerun()
             else:
