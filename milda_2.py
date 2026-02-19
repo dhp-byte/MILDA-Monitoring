@@ -1594,6 +1594,8 @@ def calculate_milda_requis_custom(nb_personnes):
     elif nb_personnes <= 4: return 2
     elif nb_personnes >= 5: return 3  # 5-6 pers = 3, et 7+ pers = 3
     return 0
+data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
+data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
 
 def add_chart_placeholder(document, title):
     """Ajoute un espace réservé pour un graphique"""
@@ -1657,26 +1659,31 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     # ========== ANALYSE DES RÉPONDANTS ==========
     doc.add_heading('Tableau 2 : Proportion des répondants identique à la distribution', level=2)
     
-    # On suppose que la colonne 'S1Q01' (Le répondant est-il le même ?) est présente 
-    if 'respondant_col' in data.columns:
-        # Nettoyage et comptage
-        counts = data['respondant_col'].value_counts()
-        total = len(data)
-        
-        table_data = []
-        # On boucle sur Oui/Non pour garder l'ordre
-        for label in ['Non', 'Oui']:
-            if label in counts:
-                count = counts[label]
-                freq = (count / total) * 100
-                table_data.append([label, count, f"{freq:.2f}"])
-        
-        table_data.append(['Total', total, '100.00'])
-        
-        create_table(doc, table_data, ['Le répondant est-il le même ?', 'Effectif', 'Fréquence (%)'])
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
+    # ========== TABLEAU DE DIFFÉRENCE DÉTAILLÉ ==========
+    doc.add_heading('Tableau : Différence des moustiquaires reçues par rapport à la norme', level=2)
     
+    # Calcul des effectifs par valeur de différence
+    diff_counts = data['diff_custom'].value_counts().sort_index()
+    total_records = len(data)
     
+    table_diff_data = []
+    
+    # Parcourir les valeurs uniques de différence triées
+    for val, count in diff_counts.items():
+        freq = (count / total_records) * 100
+        # On affiche la valeur (ex: -1, 0, 1...)
+        table_diff_data.append([int(val), count, f"{freq:.1f}"])
+    
+    # Ajouter la ligne de Total
+    table_diff_data.append(['Total', total_records, '100.0'])
+    
+    # Création du tableau dans le document
+    create_table(doc, table_diff_data, ['Nombre de Différence', 'Effectif', 'Fréquence (%)'])
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
+    
+    # On prépare une série pour le graphique (sans la ligne Total)
+    chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
+    add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
     doc.add_page_break()
     
     # ========== INDICATEURS DE QUALITÉ ==========
