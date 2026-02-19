@@ -549,6 +549,99 @@ class ReportGenerator:
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
+def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
+    """Applique la logique métier commune à Excel et KoBo"""
+    # 1. Mapping des colonnes (votre dictionnaire existant)
+    column_mapping = {
+            'province': ['province', 'Province', 'S0Q04'],
+            'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q05'],
+            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q06'],
+            'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
+            'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
+            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q03'],
+            'village': ['village', 'Village/Avenue/Quartier', 'S0Q07'],
+            'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
+            'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
+            'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
+            'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
+            'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
+            'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
+            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
+            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude']
+        }
+
+    # Nettoyage des noms (enlève les préfixes gr_1/ etc.)
+    data.columns = [c.split('/')[-1] for c in data.columns]
+    
+    # Application du mapping
+    rename_dict = {}
+    for target, sources in column_mapping.items():
+        for source in sources:
+            if source in data.columns:
+                rename_dict[source] = target
+                break
+    data = data.rename(columns=rename_dict)
+
+    # Traitement spécial GPS pour KoBo (si format liste [lat, long])
+    if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
+        coords = data['latitude']
+        data['latitude'] = coords.apply(lambda x: x[0] if isinstance(x, list) else None)
+        data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) else None)
+
+    # Normalisation Oui/Non
+    yes_no_cols = ['menage_servi', 'verif_cle', 'menage_marque', 'sensibilise']
+    for col in yes_no_cols:
+        if col in data.columns:
+            data[col] = data[col].apply(DataProcessor.normalize_yes_no)
+
+    # Conversions numériques et indicateurs
+    for col in ['nb_personnes', 'nb_milda_recues']:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+
+    data['nb_milda_attendues'] = data['nb_personnes'].apply(DataProcessor.calculate_expected_milda)
+    data['ecart_distribution'] = data['nb_milda_recues'] - data['nb_milda_attendues']
+    
+    # Indicateurs binaires pour le Dashboard
+    data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
+    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('verif_cle') == 'Oui')).astype(int)
+    data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
+    data['indic_info'] = (data['sensibilise'] == 'Oui').astype(int)
+
+    if 'date_enquete' in data.columns:
+        data['date_enquete'] = pd.to_datetime(data['date_enquete'], errors='coerce')
+
+    stats = {
+        'total_rows': len(data),
+        'total_provinces': data['province'].nunique() if 'province' in data.columns else 0,
+        'date_range': (data['date_enquete'].min(), data['date_enquete'].max())
+    }
+    return data, stats
+
+@st.cache_data(ttl=600, show_spinner=False) # Cache plus court pour KoBo (10 min)
+def load_data_from_kobo(server_url: str, asset_uid: str, token: str) -> Tuple[pd.DataFrame, Dict]:
+    """Récupère les données via l'API KoBo et les traite"""
+    try:
+        headers = {"Authorization": f"Token {token}"}
+        url = f"{server_url}/api/v2/assets/{asset_uid}/data.json"
+        
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            results = response.json().get('results', [])
+            if not results:
+                return pd.DataFrame(), {}
+            
+            df_raw = pd.DataFrame(results)
+            # On appelle la fonction de traitement universelle
+            return process_milda_dataframe(df_raw)
+        else:
+            st.error(f"Erreur API KoBo : {response.status_code}")
+            return pd.DataFrame(), {}
+            
+    except Exception as e:
+        st.error(f"Erreur de connexion KoBo : {str(e)}")
+        return pd.DataFrame(), {}
+        
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.DataFrame, Dict]:
@@ -1847,7 +1940,7 @@ def main():
     # En-tête
     render_header()
     
-    # --- 1. CONFIGURATION SIDEBAR (Connexion KoBo) ---
+    # --- 1. CONFIGURATION SIDEBAR ---
     with st.sidebar:
         st.header("🔑 Connexion KoBo")
         server_base = st.selectbox("Serveur", 
@@ -1877,7 +1970,7 @@ def main():
                 st.session_state.kobo_token = token
                 st.success("✅ Connexion réussie !")
 
-    # --- 3. LOGIQUE D'EXTRACTION KOBO (Indantée dans main) ---
+    # --- 3. LOGIQUE D'EXTRACTION KOBO ---
     if st.session_state.kobo_token:
         headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
         try:
@@ -1888,11 +1981,11 @@ def main():
                 assets_data = res_assets.json().get('results', [])
                 forms = {a['name']: a['uid'] for a in assets_data if a['asset_type'] == 'survey'}
                 
-                selected_form = st.selectbox("Choisir le formulaire :", ["-- Sélectionner --"] + list(forms.keys()))
+                selected_form = st.selectbox("Choisir le formulaire KoBo :", ["-- Sélectionner --"] + list(forms.keys()))
                 
                 if selected_form != "-- Sélectionner --":
                     if st.button("📥 Charger les données KoBo"):
-                        with st.spinner('Extraction...'):
+                        with st.spinner('Extraction et calcul des indicateurs...'):
                             uid = forms[selected_form]
                             data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
                             res_data = requests.get(data_url, headers=headers)
@@ -1900,68 +1993,75 @@ def main():
                             if res_data.status_code == 200:
                                 results = res_data.json().get('results', [])
                                 if results:
-                                    data = pd.DataFrame(results)
+                                    df_raw = pd.DataFrame(results)
                                     
-                                    # Nettoyage des colonnes KoBo
-                                    data.columns = [c.split('/')[-1] for c in data.columns]
-                                    st.write("Colonnes détectées dans KoBo :", list(data.columns))
-
-                                    st.subheader("📋 Aperçu des données extraites de KoBo")
-    
-    # Affiche le DataFrame avec une barre de recherche et des filtres
-                                    st.dataframe(data)
-
-                                    #data, stats = process_raw_kobo_data(data)
-                                    # Traitement et stockage
+                                    # Traitement universel (Mapping + Indicateurs + Nettoyage)
+                                    # Note: Cette fonction doit contenir la logique de mapping S1Q17 -> menage_servi
+                                    data, stats = process_milda_dataframe(df_raw) 
+                                    
                                     st.session_state.data = data
                                     st.session_state.tables = generate_analysis_tables(data)
-                                    st.write(st.session_state.tables)
                                     st.success(f"✅ {len(data)} enregistrements chargés !")
                                     st.rerun()
+                                else:
+                                    st.warning("Le formulaire sélectionné est vide.")
             else:
-                st.error("Impossible de récupérer la liste des projets KoBo.")
+                st.error("Erreur lors de la récupération de la liste des projets.")
         except Exception as e:
             st.error(f"Erreur KoBo : {e}")
 
-    # --- 4. LOGIQUE IMPORT EXCEL (Si pas de KoBo) ---
+    # --- 4. LOGIQUE IMPORT EXCEL ---
     if uploaded_file and st.session_state.data is None:
-        with st.spinner("🔄 Chargement du fichier Excel..."):
+        with st.spinner("🔄 Traitement du fichier Excel..."):
             data, stats = load_and_process_data(uploaded_file)
-            st.session_state.data = data
-            st.session_state.tables = generate_analysis_tables(data)
+            if not data.empty:
+                st.session_state.data = data
+                st.session_state.tables = generate_analysis_tables(data)
+                st.rerun()
 
     # --- 5. AFFICHAGE DES ONGLETS (Si données présentes) ---
     if st.session_state.data is not None:
         data = st.session_state.data
         tables = st.session_state.tables
 
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        # Bouton pour réinitialiser les données
+        if st.sidebar.button("🗑️ Effacer les données"):
+            st.session_state.data = None
+            st.rerun()
+
+        tabs = st.tabs([
             "🏠 Dashboard", "🔍 Analyse", "🗺️ Cartographie", 
             "🏃 Suivi Agents", "🛡️ Qualité", "📊 Statistiques", 
             "📥 Export", "📥 Rapport Final"
         ])
 
-        with tab1: page_dashboard(data, tables)
-        with tab2: page_analysis(data, tables)
-        with tab3: page_maps(data)
-        with tab4: page_agent_tracking(data)
-        with tab5: page_data_quality(data)
-        with tab6: page_statistics(data)
-        with tab7: page_export(data, tables)
-        with tab8:
-            st.markdown("## 📊 Rapport de Synthèse")
+        with tabs[0]: page_dashboard(data, tables)
+        with tabs[1]: page_analysis(data, tables)
+        with tabs[2]: page_maps(data)
+        with tabs[3]: page_agent_tracking(data)
+        with tabs[4]: page_data_quality(data)
+        with tabs[5]: page_statistics(data)
+        with tabs[6]: page_export(data, tables)
+        with tabs[7]:
+            st.markdown("## 📊 Rapport de Synthèse Automatique")
             download_automatic_report_button(data, tables)
     
     else:
-        # Message d'accueil si rien n'est chargé
-        st.info("👆 Connectez-vous à KoBo ou importez un fichier Excel pour commencer.")
-        st.markdown("### 📋 Structure attendue")
-        st.code("province, district, village, date_enquete, menage_servi, nb_milda_recues...", language="text")
+        # Message d'accueil / Aide
+        st.info("👆 Connectez-vous à KoBo (Sidebar) ou importez un fichier Excel pour générer les analyses.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### 📋 Structure attendue")
+            st.code("province, district, village\ndate_enquete\nmenage_servi (Oui/Non)\nnb_personnes\nnb_milda_recues", language="text")
+        with col2:
+            st.markdown("### ⚙️ Paramètres actuels")
+            st.write(f"Version DOCX : {'✅ OK' if DOCX_AVAILABLE else '❌ Absent'}")
+            st.write(f"Version Stats : {'✅ OK' if STATS_AVAILABLE else '❌ Absent'}")
 
     # Footer
     st.markdown("---")
-    st.caption(f"🦟 MILDA Dashboard | Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
-
+    st.caption(f"🦟 MILDA Dashboard v1.2 | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
 
 if __name__ == "__main__":
     main()
