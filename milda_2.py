@@ -1594,8 +1594,7 @@ def calculate_milda_requis_custom(nb_personnes):
     elif nb_personnes <= 4: return 2
     elif nb_personnes >= 5: return 3  # 5-6 pers = 3, et 7+ pers = 3
     return 0
-data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
-data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
+
 
 def add_chart_placeholder(document, title):
     """Ajoute un espace réservé pour un graphique"""
@@ -1659,9 +1658,30 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     # ========== ANALYSE DES RÉPONDANTS ==========
     doc.add_heading('Tableau 2 : Proportion des répondants identique à la distribution', level=2)
     
+    if 'respondant_col' in data.columns:
+        # Nettoyage et comptage
+        counts = data['respondant_col'].value_counts()
+        total = len(data)
+        
+        table_data = []
+        # On boucle sur Oui/Non pour garder l'ordre
+        for label in ['Non', 'Oui']:
+            if label in counts:
+                count = counts[label]
+                freq = (count / total) * 100
+                table_data.append([label, count, f"{freq:.2f}"])
+        
+        table_data.append(['Total', total, '100.00'])
+        
+        create_table(doc, table_data, ['Le répondant est-il le même ?', 'Effectif', 'Fréquence (%)'])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
+    
+    
     # ========== TABLEAU DE DIFFÉRENCE DÉTAILLÉ ==========
     doc.add_heading('Tableau : Différence des moustiquaires reçues par rapport à la norme', level=2)
-    
+
+    data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
+    data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
     # Calcul des effectifs par valeur de différence
     diff_counts = data['diff_custom'].value_counts().sort_index()
     total_records = len(data)
