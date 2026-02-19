@@ -570,7 +570,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
             'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
-            'respondant_col' = ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?']
+            'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?']
         }
 
     # Nettoyage des noms (enlève les préfixes gr_1/ etc.)
