@@ -570,7 +570,10 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
             'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
-            'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?']
+            'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
+            'id_scan_count' : ['${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
+            'sensibilisation' : ['Sélectionner la raison', 'S1Q25'],
+            'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
         }
 
     # Nettoyage des noms (enlève les préfixes gr_1/ etc.)
@@ -2053,7 +2056,77 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         p.add_run('• Intensifier le marquage systématique des ménages\n')
     if pct_informes < 70:
         p.add_run('• Renforcer les activités de sensibilisation\n')
+
+    # ========== ANALYSE DES SCANS QR ==========
+    doc.add_heading('Analyse du scannage des codes QR', level=1)
     
+    # Tableau : Nombre des scans QR
+    # Calcul basé sur id_scan (réussi) vs rsn2 (échec)
+    total_recues = data['nb_milda_recues'].sum() # Nombre total moustiquaires déclarées reçues
+    nb_scannes = data['id_scan_count'].sum() # Somme des scans réussis dans le repeat
+    nb_non_scannes = total_recues - nb_scannes
+    
+    table_scan = [
+        ["Nombre des scans QR", nb_scannes, f"{(nb_scannes/total_recues*100):.1f}"],
+        ["Nombre des moustiquaires non scannées", nb_non_scannes, f"{(nb_non_scannes/total_recues*100):.1f}"],
+        ["Nombre moustiquaire reçu", total_recues, "100"]
+    ]
+    create_table(doc, table_scan, ["Moustiquaire", "Effectif", "Fréquence (%)"])
+    
+    # Tableau : Répartition du nombre des scans QR par ménage
+    # Ménage complet si id_scan_count == S1Q20
+    complets = (data['id_scan_count'] == data['nb_milda_recues']).sum()
+    partiels = len(data[data['menage_servi'] == 'Oui']) - complets
+    
+    table_menage_scan = [
+        ["Nombre ménages dont tous les codes QR ont été scannés", complets, f"{(complets/len(data)*100):.1f}"],
+        ["Nombre ménages dont les codes QR ont été partiellement scannés", partiels, f"{(partiels/len(data)*100):.1f}"],
+        ["Total", len(data), "100"]
+    ]
+    create_table(doc, table_menage_scan, ["Nombre de scan QR", "Effectif", "Fréquence (%)"])
+
+    # ========== RAISONS NON SCAN & SENSIBILISATION ==========
+    # Graphique : Instructions les plus citées
+    # Basé sur le champ 'sensibilisation' (select_multiple)
+    if 'sensibilisation' in data.columns:
+        doc.add_heading("Instructions d'utilisation et d'entretien les plus citées", level=2)
+        # On sépare les réponses multiples et on compte
+        sensi_counts = data['sensibilisation'].str.split(' ').explode().value_counts()
+        # Mapping des labels depuis Choix Kobo
+        sensi_labels = {
+            "1": "Il faut utiliser la moustiquaire toutes les nuits",
+            "2": "Les moustiquaires protègent contre le paludisme",
+            "3": "Entretien : nouez ou pliez votre moustiquaire",
+            "4": "Entretien : lavez à l'eau et au savon",
+            "5": "Entretien : séchez à l'ombre"
+        }
+        sensi_stats = (sensi_counts / len(data) * 100).rename(index=sensi_labels)
+        add_matplotlib_chart(doc, sensi_stats.head(5), "Top 5 des instructions citées (%)", "bar")
+
+    # ========== INFORMATION CAMPAGNE ==========
+    doc.add_heading('1.1 Information de la campagne de distribution', level=1)
+    
+    # Tableau 6 : Proportion globale
+    info_counts = data['information'].value_counts()
+    total_info = len(data)
+    table_6 = [
+        ["Non", info_counts.get('Non', 0), f"{(info_counts.get('Non', 0)/total_info*100):.2f}"],
+        ["Oui", info_counts.get('Oui', 0), f"{(info_counts.get('Oui', 0)/total_info*100):.2f}"],
+        ["Total", total_info, "100"]
+    ]
+    create_table(doc, table_6, ["Étiez-vous informé...", "Effectif", "Fréquence"])
+    
+    # Tableau 7 : Par Centre de Santé (CS)
+    if 'centre_sante' in data.columns:
+        doc.add_heading('Tableau 7: Proportion des ménages informés par CS', level=2)
+        cs_info = pd.crosstab(data['centre_sante'], data['information'], normalize='index') * 100
+        cs_info_data = []
+        for cs_name, row in cs_info.iterrows():
+            # Mapping du nom du CS via le fichier Choix
+            label_cs = choices_cs.get(str(cs_name), cs_name) 
+            cs_info_data.append([label_cs, f"{row.get('Non', 0):.1f}", f"{row.get('Oui', 0):.1f}"])
+        
+        create_table(doc, cs_info_data, ["centre_sante", "Non (%)", "Oui (%)"])
     # Sauvegarder en mémoire
     output = io.BytesIO()
     doc.save(output)
