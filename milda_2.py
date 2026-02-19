@@ -6,7 +6,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib
+import matplotlib.pyplot as plt
 import scipy
 from streamlit_folium import st_folium
 import folium
@@ -1539,7 +1539,28 @@ def create_table(document, data, headers):
     
     return table
 
-
+def add_matplotlib_chart(document, data_series, title, chart_type='bar'):
+    """Génère un graphique Matplotlib et l'insère dans le document Word"""
+    plt.figure(figsize=(6, 4))
+    
+    if chart_type == 'bar':
+        data_series.plot(kind='bar', color='skyblue')
+    elif chart_type == 'pie':
+        data_series.plot(kind='pie', autopct='%1.1f%%', startangle=140)
+    
+    plt.title(title)
+    plt.tight_layout()
+    
+    # Sauvegarder dans un tampon mémoire
+    img_stream = io.BytesIO()
+    plt.savefig(img_stream, format='png', dpi=150)
+    plt.close() # Important pour libérer la mémoire
+    img_stream.seek(0)
+    
+    # Ajouter au document
+    document.add_picture(img_stream, width=Inches(5.0))
+    last_paragraph = document.paragraphs[-1]
+    last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 def add_chart_placeholder(document, title):
     """Ajoute un espace réservé pour un graphique"""
     p = document.add_paragraph()
@@ -1627,7 +1648,11 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     p.add_run(f'• {pct_informes}% ont été informés sur l\'utilisation correcte des MILDA\n')
     
     doc.add_heading('Ménages servis en MILDA', level=2)
-    add_chart_placeholder(doc, 'Pourcentage des ménages servis en MILDA par Centre de Santé')
+    if 'centre_sante' in data.columns:
+        cs_servis = data.groupby('centre_sante')['indic_servi'].mean() * 100
+        add_matplotlib_chart(doc, cs_servis, 'Taux de couverture (%) par Centre de Santé', 'bar')
+        
+    #add_chart_placeholder(doc, 'Pourcentage des ménages servis en MILDA par Centre de Santé')
     
     # Tableau par Centre de Santé
     if 'centre_sante' in data.columns:
@@ -1715,8 +1740,12 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     # ========== MARQUAGE DES MÉNAGES ==========
     doc.add_heading('Marquage des ménages', level=1)
-    
-    add_chart_placeholder(doc, 'Pourcentage de ménages avec marquage par CS')
+    if 'centre_sante' in data.columns:
+        # On calcule le taux de marquage pour les ménages servis
+        marquage_data = data[data['menage_servi'] == 'Oui'].groupby('centre_sante')['indic_marque'].mean() * 100
+        add_matplotlib_chart(doc, marquage_data, 'Taux de marquage (%) par Centre de Santé', 'bar')
+        
+    #add_chart_placeholder(doc, 'Pourcentage de ménages avec marquage par CS')
     
     if 'centre_sante' in data.columns:
         marquage_stats = data[data['menage_servi'] == 'Oui'].groupby('centre_sante').agg(
