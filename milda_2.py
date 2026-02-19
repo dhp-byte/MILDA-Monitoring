@@ -1658,9 +1658,9 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_heading('Tableau 2 : Proportion des répondants identique à la distribution', level=2)
     
     # On suppose que la colonne 'S1Q01' (Le répondant est-il le même ?) est présente 
-    if respondant_col in data.columns:
+    if 'respondant_col' in data.columns:
         # Nettoyage et comptage
-        counts = data[respondant_col].value_counts()
+        counts = data['respondant_col'].value_counts()
         total = len(data)
         
         table_data = []
