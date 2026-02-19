@@ -1911,7 +1911,7 @@ def main():
     # Affiche le DataFrame avec une barre de recherche et des filtres
                                     st.dataframe(data)
 
-                                    data, stats = process_raw_kobo_data(data)
+                                    #data, stats = process_raw_kobo_data(data)
                                     # Traitement et stockage
                                     st.session_state.data = data
                                     st.session_state.tables = generate_analysis_tables(data)
