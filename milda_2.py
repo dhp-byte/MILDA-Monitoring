@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from docx.shared import Inches
 import scipy
 from streamlit_folium import st_folium
 import folium
@@ -568,7 +569,8 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
-            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude']
+            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
+            'respondant_col' = ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?']
         }
 
     # Nettoyage des noms (enlève les préfixes gr_1/ etc.)
@@ -1539,28 +1541,60 @@ def create_table(document, data, headers):
     
     return table
 
+
 def add_matplotlib_chart(document, data_series, title, chart_type='bar'):
-    """Génère un graphique Matplotlib et l'insère dans le document Word"""
-    plt.figure(figsize=(6, 4))
+    """Génère un graphique avec étiquettes de pourcentage et l'insère dans Word"""
+    # Utiliser un style propre
+    plt.style.use('seaborn-v0_8-muted') 
+    fig, ax = plt.subplots(figsize=(7, 4))
     
     if chart_type == 'bar':
-        data_series.plot(kind='bar', color='skyblue')
+        # Création des barres
+        data_series.plot(kind='bar', ax=ax, color='#2c3e50', edgecolor='white')
+        ax.set_ylabel('Pourcentage (%)', fontweight='bold')
+        ax.set_xlabel('')
+        
+        # AJOUT DES LIBELLÉS (Valeurs au-dessus des barres)
+        for p in ax.patches:
+            height = p.get_height()
+            ax.annotate(f'{height:.1f}%', 
+                        (p.get_x() + p.get_width() / 2., height), 
+                        ha='center', va='center', 
+                        xytext=(0, 8), 
+                        textcoords='offset points',
+                        fontsize=9, fontweight='bold', color='#c0392b')
+            
+        # Ajuster l'échelle pour ne pas couper les étiquettes
+        ax.set_ylim(0, max(data_series.max() * 1.2, 100))
+
     elif chart_type == 'pie':
-        data_series.plot(kind='pie', autopct='%1.1f%%', startangle=140)
-    
-    plt.title(title)
+        # Graphique en secteurs avec pourcentages intégrés
+        data_series.plot(kind='pie', ax=ax, autopct='%1.1f%%', 
+                         startangle=140, colors=['#27ae60', '#e67e22', '#3498db'])
+        ax.set_ylabel('')
+
+    plt.title(title, pad=20, fontsize=11, fontweight='bold')
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
     
-    # Sauvegarder dans un tampon mémoire
+    # Conversion en image pour Word
     img_stream = io.BytesIO()
     plt.savefig(img_stream, format='png', dpi=150)
-    plt.close() # Important pour libérer la mémoire
+    plt.close(fig)
     img_stream.seek(0)
     
-    # Ajouter au document
-    document.add_picture(img_stream, width=Inches(5.0))
-    last_paragraph = document.paragraphs[-1]
-    last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # Ajout au document Word
+    document.add_picture(img_stream, width=Inches(5.5))
+    last_p = document.paragraphs[-1]
+    last_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+def calculate_milda_requis_custom(nb_personnes):
+    """Calcule le nombre requis selon votre nouvelle table"""
+    if nb_personnes <= 2: return 1
+    elif nb_personnes <= 4: return 2
+    elif nb_personnes >= 5: return 3  # 5-6 pers = 3, et 7+ pers = 3
+    return 0
+
 def add_chart_placeholder(document, title):
     """Ajoute un espace réservé pour un graphique"""
     p = document.add_paragraph()
@@ -1618,8 +1652,30 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             table_data.append(['Total', total, 100.00])
             
             create_table(doc, table_data, ['Êtes-vous le Chef de ce ménage ?', 'Effectif', 'Fréquence'])
+            doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+
+    # ========== ANALYSE DES RÉPONDANTS ==========
+    doc.add_heading('Tableau 2 : Proportion des répondants identique à la distribution', level=2)
     
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    # On suppose que la colonne 'S1Q01' (Le répondant est-il le même ?) est présente 
+    if respondant_col in data.columns:
+        # Nettoyage et comptage
+        counts = data[respondant_col].value_counts()
+        total = len(data)
+        
+        table_data = []
+        # On boucle sur Oui/Non pour garder l'ordre
+        for label in ['Non', 'Oui']:
+            if label in counts:
+                count = counts[label]
+                freq = (count / total) * 100
+                table_data.append([label, count, f"{freq:.2f}"])
+        
+        table_data.append(['Total', total, '100.00'])
+        
+        create_table(doc, table_data, ['Le répondant est-il le même ?', 'Effectif', 'Fréquence (%)'])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
+    
     
     doc.add_page_break()
     
@@ -1648,9 +1704,11 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     p.add_run(f'• {pct_informes}% ont été informés sur l\'utilisation correcte des MILDA\n')
     
     doc.add_heading('Ménages servis en MILDA', level=2)
+    
     if 'centre_sante' in data.columns:
-        cs_servis = data.groupby('centre_sante')['indic_servi'].mean() * 100
-        add_matplotlib_chart(doc, cs_servis, 'Taux de couverture (%) par Centre de Santé', 'bar')
+        # Calcul du % de 'Oui' par CS
+        stats_servis = data.groupby('centre_sante')['indic_servi'].mean() * 100
+        add_matplotlib_chart(doc, stats_servis, 'Taux de couverture par Centre de Santé (%)', 'bar')
         
     #add_chart_placeholder(doc, 'Pourcentage des ménages servis en MILDA par Centre de Santé')
     
@@ -1740,10 +1798,11 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     # ========== MARQUAGE DES MÉNAGES ==========
     doc.add_heading('Marquage des ménages', level=1)
+    
     if 'centre_sante' in data.columns:
-        # On calcule le taux de marquage pour les ménages servis
-        marquage_data = data[data['menage_servi'] == 'Oui'].groupby('centre_sante')['indic_marque'].mean() * 100
-        add_matplotlib_chart(doc, marquage_data, 'Taux de marquage (%) par Centre de Santé', 'bar')
+        # Taux de marquage parmi les ménages servis
+        stats_marquage = data[data['indic_servi']==1].groupby('centre_sante')['indic_marque'].mean() * 100
+        add_matplotlib_chart(doc, stats_marquage, 'Taux de marquage des ménages servis (%)', 'bar')
         
     #add_chart_placeholder(doc, 'Pourcentage de ménages avec marquage par CS')
     
@@ -1818,6 +1877,12 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
+    doc.add_heading('Répartition des chefs de ménage', level=2)
+    # On utilise la colonne chef identifiée précédemment
+    chef_dist = data[chef_col].value_counts()
+    add_matplotlib_chart(doc, chef_dist, 'Répartition des répondants (Chef vs Autre)', 'pie')
+    
+    
     doc.add_page_break()
     
     # ========== INFORMATION SUR LA CAMPAGNE ==========
@@ -1844,7 +1909,39 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             ])
             
             doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+
+    # ========== ANALYSE DE LA DIFFÉRENCE ==========
+    doc.add_heading('Tableau 3 : Différence des moustiquaires reçues', level=2)
     
+    # Recalcul de la différence selon la règle spécifique
+    data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
+    data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
+    
+    def categorize_diff(x):
+        if x < 0: return "Moins que la norme"
+        elif x == 0: return "Norme respectée"
+        else: return "Plus que la norme"
+    
+    data['diff_label'] = data['diff_custom'].apply(categorize_diff)
+    
+    # Calcul des effectifs
+    diff_counts = data['diff_label'].value_counts()
+    total_diff = len(data)
+    
+    table_diff = []
+    for cat in ["Moins que la norme", "Norme respectée", "Plus que la norme"]:
+        count = diff_counts.get(cat, 0)
+        freq = (count / total_diff) * 100
+        table_diff.append([cat, count, f"{freq:.2f}"])
+    
+    table_diff.append(['Total', total_diff, '100.00'])
+    
+    create_table(doc, table_diff, ['Différence par rapport à la norme', 'Effectif', 'Fréquence (%)'])
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
+    
+    # Optionnel : Ajouter le graphique correspondant
+    diff_stats = (data['diff_label'].value_counts(normalize=True) * 100)
+    add_matplotlib_chart(doc, diff_stats, 'Respect de la norme de distribution (%)', 'bar')
     # ========== CONCLUSION ==========
     doc.add_page_break()
     doc.add_heading('Conclusion', level=1)
