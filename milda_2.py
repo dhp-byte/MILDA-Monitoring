@@ -2183,7 +2183,7 @@ def get_kobo_token(url, username, password):
 def process_raw_kobo_data(df):
     """Applique la logique de calcul des indicateurs sur les données brutes"""
     # Normalisation Oui/Non (utilise votre classe DataProcessor existante)
-    yes_no_cols = ['menage_servi', 'verif_cle', 'menage_marque', 'sensibilise']
+    yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information']
     for col in yes_no_cols:
         if col in df.columns:
             df[col] = df[col].apply(DataProcessor.normalize_yes_no)
