@@ -2065,19 +2065,19 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     # Graphique : Instructions les plus citées
     # Basé sur le champ 'sensibilisation' (select_multiple)
     if 'raison' in data.columns:
-    doc.add_heading("Instructions d'utilisation et d'entretien les plus citées", level=2)
+        doc.add_heading("Instructions d'utilisation et d'entretien les plus citées", level=2)
     # On sépare les réponses multiples et on compte
-          sensi_counts = data['raison'].str.split(' ').explode().value_counts()
+        sensi_counts = data['raison'].str.split(' ').explode().value_counts()
           # Mapping des labels depuis Choix Kobo
-          sensi_labels = {
+        sensi_labels = {
                 "1": "Il faut utiliser la moustiquaire toutes les nuits",
                 "2": "Les moustiquaires protègent contre le paludisme",
                 "3": "Entretien : nouez ou pliez votre moustiquaire",
                 "4": "Entretien : lavez à l'eau et au savon",
                 "5": "Entretien : séchez à l'ombre"
-          }
-          sensi_stats = (sensi_counts / len(data) * 100).rename(index=sensi_labels)
-          add_matplotlib_chart(doc, sensi_stats.head(5), "Top 5 des instructions citées (%)", "bar")
+        }
+        sensi_stats = (sensi_counts / len(data) * 100).rename(index=sensi_labels)
+        add_matplotlib_chart(doc, sensi_stats.head(5), "Top 5 des instructions citées (%)", "bar")
     
     # ========== INFORMATION CAMPAGNE ==========
     doc.add_heading('1.1 Information de la campagne de distribution', level=1)
