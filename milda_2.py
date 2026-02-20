@@ -889,7 +889,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     """Page principale du dashboard"""
     
     st.markdown("## 📊 Vue d'ensemble")
-    
+    st.dataframe(data)
     # Calcul des métriques
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
     quality_score = MetricsCalculator.calculate_quality_score(metrics)
@@ -2277,7 +2277,6 @@ def main():
                                     data, stats = process_milda_dataframe(df_raw) 
                                     
                                     st.session_state.data = data
-                                    st.dataframe(data)
                                     st.session_state.tables = generate_analysis_tables(data)
                                     st.success(f"✅ {len(data)} enregistrements chargés !")
                                     st.rerun()
