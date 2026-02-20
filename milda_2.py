@@ -571,7 +571,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
             'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
             'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
-            'id_scan_count' : ['${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
+            'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?'],
             'raison' : ['Sélectionner la raison', 'S1Q25'],
             'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
         }
@@ -2032,6 +2032,78 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     # Optionnel : Ajouter le graphique correspondant
     diff_stats = (data['diff_label'].value_counts(normalize=True) * 100)
     add_matplotlib_chart(doc, diff_stats, 'Respect de la norme de distribution (%)', 'bar')
+
+    # ========== CALCUL DES COMPTEURS DE SCANS (À ajouter au début de la fonction) ==========
+
+    # 1. Vérifiez d'abord si la colonne brute existe (souvent nommée 'scan_milda' ou '_scan_milda_count')
+    # Si KoBo n'envoie pas le compte, nous allons le déduire des données
+    if 'id_scan' in data.columns:
+        # Si id_scan est une liste ou contient les données du repeat
+        data['id_scan_count'] = data['id_scan'].apply(lambda x: len(x) if isinstance(x, list) else (1 if pd.notnull(x) else 0))
+    else:
+        # Si la colonne n'existe pas du tout, on initialise à 0 pour éviter le crash
+        # Note : Vérifiez dans votre export Excel le nom exact de la colonne du repeat
+        data['id_scan_count'] = 0 
+    
+    # ========== ANALYSE DES SCANS QR (La section qui posait erreur) ==========
+    doc.add_heading('Analyse du scannage des codes QR', level=1)
+    
+    # On utilise nb_milda_recues (Nombre de MILDA reçu selon le répondant )
+    total_recues = data['nb_milda_recues'].astype(float).sum() if 'nb_milda_recues' in data.columns else 0
+    nb_scannes = data['id_scan_count'].sum() 
+    nb_non_scannes = max(0, total_recues - nb_scannes)
+    
+    # Affichage du Tableau
+    table_scan = [
+        ["Nombre des scans QR", int(nb_scannes), f"{(nb_scannes/total_recues*100 if total_recues > 0 else 0):.1f}"],
+        ["Nombre des moustiquaires non scannées", int(nb_non_scannes), f"{(nb_non_scannes/total_recues*100 if total_recues > 0 else 0):.1f}"],
+        ["Nombre moustiquaire reçu", int(total_recues), "100"]
+    ]
+    create_table(doc, table_scan, ["Moustiquaire", "Effectif", "Fréquence (%)"])
+    
+    # ========== RAISONS NON SCAN & SENSIBILISATION ==========
+    # Graphique : Instructions les plus citées
+    # Basé sur le champ 'sensibilisation' (select_multiple)
+    if 'raison' in data.columns:
+    doc.add_heading("Instructions d'utilisation et d'entretien les plus citées", level=2)
+    # On sépare les réponses multiples et on compte
+          sensi_counts = data['raison'].str.split(' ').explode().value_counts()
+          # Mapping des labels depuis Choix Kobo
+          sensi_labels = {
+                "1": "Il faut utiliser la moustiquaire toutes les nuits",
+                "2": "Les moustiquaires protègent contre le paludisme",
+                "3": "Entretien : nouez ou pliez votre moustiquaire",
+                "4": "Entretien : lavez à l'eau et au savon",
+                "5": "Entretien : séchez à l'ombre"
+          }
+          sensi_stats = (sensi_counts / len(data) * 100).rename(index=sensi_labels)
+          add_matplotlib_chart(doc, sensi_stats.head(5), "Top 5 des instructions citées (%)", "bar")
+    
+    # ========== INFORMATION CAMPAGNE ==========
+    doc.add_heading('1.1 Information de la campagne de distribution', level=1)
+        
+    # Tableau 6 : Proportion globale
+    info_counts = data['information'].value_counts()
+    total_info = len(data)
+    table_6 = [
+            ["Non", info_counts.get('Non', 0), f"{(info_counts.get('Non', 0)/total_info*100):.2f}"],
+            ["Oui", info_counts.get('Oui', 0), f"{(info_counts.get('Oui', 0)/total_info*100):.2f}"],
+            ["Total", total_info, "100"]
+        ]
+    create_table(doc, table_6, ["Étiez-vous informé...", "Effectif", "Fréquence"])
+        
+    # Tableau 7 : Par Centre de Santé (CS)
+    if 'centre_sante' in data.columns:
+        doc.add_heading('Tableau 7: Proportion des ménages informés par CS', level=2)
+        cs_info = pd.crosstab(data['centre_sante'], data['information'], normalize='index') * 100
+        cs_info_data = []
+        for cs_name, row in cs_info.iterrows():
+            # Mapping du nom du CS via le fichier Choix
+            label_cs = choices_cs.get(str(cs_name), cs_name) 
+            cs_info_data.append([label_cs, f"{row.get('Non', 0):.1f}", f"{row.get('Oui', 0):.1f}"])
+            
+        create_table(doc, cs_info_data, ["centre_sante", "Non (%)", "Oui (%)"])
+
     # ========== CONCLUSION ==========
     doc.add_page_break()
     doc.add_heading('Conclusion', level=1)
