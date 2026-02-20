@@ -566,12 +566,13 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
             'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
+            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
             'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
             'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
-            'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?'],
+            'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
             'raison' : ['Sélectionner la raison', 'S1Q25'],
             'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
         }
@@ -610,9 +611,9 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     
     # Indicateurs binaires pour le Dashboard
     data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
-    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('verif_cle') == 'Oui')).astype(int)
+    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
     data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
-    data['indic_info'] = (data['sensibilise'] == 'Oui').astype(int)
+    data['indic_info'] = (data['information'] == 'Oui').astype(int)
 
     if 'date_enquete' in data.columns:
         data['date_enquete'] = pd.to_datetime(data['date_enquete'], errors='coerce')
