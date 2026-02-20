@@ -2277,6 +2277,7 @@ def main():
                                     data, stats = process_milda_dataframe(df_raw) 
                                     
                                     st.session_state.data = data
+                                    st.dataframe(data)
                                     st.session_state.tables = generate_analysis_tables(data)
                                     st.success(f"✅ {len(data)} enregistrements chargés !")
                                     st.rerun()
