@@ -572,7 +572,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
             'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
             'id_scan_count' : ['${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
-            'sensibilisation' : ['Sélectionner la raison', 'S1Q25'],
+            'raison' : ['Sélectionner la raison', 'S1Q25'],
             'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
         }
 
