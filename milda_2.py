@@ -596,7 +596,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) else None)
 
     # Normalisation Oui/Non
-    yes_no_cols = ['menage_servi', 'verif_cle', 'menage_marque', 'sensibilise']
+    yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information']
     for col in yes_no_cols:
         if col in data.columns:
             data[col] = data[col].apply(DataProcessor.normalize_yes_no)
@@ -694,7 +694,7 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
         data = data.rename(columns=rename_dict)
         
         # Normalisation des colonnes Oui/Non
-        yes_no_cols = ['menage_servi', 'verif_cle', 'menage_marque', 'sensibilise']
+        yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information']
         for col in yes_no_cols:
             if col in data.columns:
                 data[col] = data[col].apply(DataProcessor.normalize_yes_no)
@@ -714,9 +714,9 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
         
         # Indicateurs binaires
         data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
-        data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data['verif_cle'] == 'Oui')).astype(int)
+        data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data['norme'] == 'Oui')).astype(int)
         data['indic_marque'] = ((data['menage_servi'] == 'Oui') & (data['menage_marque'] == 'Oui')).astype(int)
-        data['indic_info'] = (data['sensibilise'] == 'Oui').astype(int)
+        data['indic_info'] = (data['information'] == 'Oui').astype(int)
         
         # Conversion des dates
         if 'date_enquete' in data.columns:
