@@ -2199,9 +2199,9 @@ def process_raw_kobo_data(df):
     
     # GÉNÉRATION DES COLONNES MANQUANTES (Cause de la KeyError)
     df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int)
-    df['indic_correct'] = ((df.get('menage_servi') == 'Oui') & (df.get('verif_cle') == 'Oui')).astype(int)
-    df['indic_marque'] = ((df.get('menage_servi') == 'Oui') & (df.get('menage_marque') == 'Oui')).astype(int)
-    df['indic_info'] = (df.get('sensibilise') == 'Oui').astype(int)
+    df['indic_correct'] = (df.get('norme') == 'Oui').astype(int)
+    df['indic_marque'] = ((df.get('menage_marque') == 'Oui').astype(int)
+    df['indic_info'] = (df.get('information') == 'Oui').astype(int)
     
     # Calcul des écarts pour la page analyse
     if 'nb_milda_attendues' in df.columns and 'nb_milda_recues' in df.columns:
