@@ -611,38 +611,58 @@ MAPPINGS_STATIQUES = {
     }
 }
 
-def get_clean_mappings_from_github(url):
+def load_github_mappings_debug(url):
     try:
         response = requests.get(url, timeout=15)
         response.raise_for_status()
         
-        # On force la lecture en STRING pour 'value' et 'label'
-        df_choices = pd.read_excel(
-            BytesIO(response.content), 
-            sheet_name='Choices',
-            dtype={'list_name': str, 'value': str, 'label': str}
-        )
+        # On charge tout le fichier sans filtre d'abord
+        xls = pd.ExcelFile(BytesIO(response.content))
         
-        # Nettoyage radical : suppression des espaces et conversion en minuscules pour list_name
-        df_choices['list_name'] = df_choices['list_name'].str.strip()
-        df_choices['value'] = df_choices['value'].str.strip()
-        df_choices['label'] = df_choices['label'].str.strip()
+        # Vérification des noms de feuilles disponibles
+        if 'Choices' not in xls.sheet_names:
+            print(f"❌ Erreur : La feuille 'Choices' n'existe pas. Feuilles trouvées : {xls.sheet_names}")
+            return None
+
+        df_choices = pd.read_excel(xls, sheet_name='Choices', dtype=str)
         
-        # Construction du dictionnaire
+        # Suppression des lignes totalement vides
+        df_choices = df_choices.dropna(subset=['list_name', 'value'])
+        
         mappings = {}
         for list_name in df_choices['list_name'].unique():
+            # Nettoyage strict
+            clean_list_name = str(list_name).strip()
             subset = df_choices[df_choices['list_name'] == list_name]
-            # On crée un dictionnaire propre pour chaque catégorie
-            mappings[list_name] = dict(zip(subset['value'], subset['label']))
+            
+            mappings[clean_list_name] = dict(zip(
+                subset['value'].str.strip(), 
+                subset['label'].str.strip()
+            ))
+        
+        if not mappings:
+            print("⚠️ Le dictionnaire a été créé mais il est vide. Vérifiez le contenu des colonnes.")
             
         return mappings
+
     except Exception as e:
-        print(f"Erreur lors de la récupération du fichier : {e}")
+        print(f"❌ Erreur réseau ou format : {e}")
         return None
+
+
+
 
 # URL vers votre fichier (format RAW)
 GITHUB_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
-mappings = get_clean_mappings_from_github(GITHUB_URL)
+mappings = load_github_mappings_debug(GITHUB_URL)
+
+if mappings:
+    st.success(f"Dictionnaire chargé : {list(mappings.keys())} listes trouvées.")
+    # Affiche un petit morceau pour vérifier les noms
+    if 'province' in mappings:
+        st.write("Exemple Province :", mappings['province'])
+else:
+    st.error("Le dictionnaire est vide. Vérifiez la console pour les détails de l'erreur.")
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
