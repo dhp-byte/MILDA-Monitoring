@@ -564,7 +564,7 @@ import pandas as pd
 import requests
 from io import BytesIO  # <-- C'EST CETTE LIGNE QUI MANQUE
 # Chargement des dictionnaires au démarrage
-mappings = load_github_mappings(GITHUB_CHOICES_URL)
+
 
 # MAPPING OFFICIEL PHASE 1 - 2026
 MAPPINGS_STATIQUES = {
@@ -659,7 +659,7 @@ def load_github_mappings_debug(url):
 
 # URL vers votre fichier (format RAW)
 GITHUB_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
-mappings = load_github_mappings_debug(GITHUB_URL)
+mappings = load_github_mappings(GITHUB_CHOICES_URL)
 
 if mappings:
     st.success(f"Dictionnaire chargé : {list(mappings.keys())} listes trouvées.")
