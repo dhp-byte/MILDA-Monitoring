@@ -664,6 +664,24 @@ if mappings:
 else:
     st.error("Le dictionnaire est vide. Vérifiez la console pour les détails de l'erreur.")
 # Affichez ceci temporairement pour diagnostiquer
+# Forcez la lecture de TOUTES les colonnes en texte pour éviter les erreurs de type
+df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choices', dtype=str)
+
+# ÉLIMINATION DES LIGNES VIDES (C'est souvent ici que ça bloque)
+df_choices = df_choices.dropna(subset=['list_name', 'value'])
+
+mappings = {}
+for list_name in df_choices['list_name'].unique():
+    # Nettoyage des espaces pour la clé de liste (ex: 'province ' -> 'province')
+    clean_list_name = str(list_name).strip()
+    
+    subset = df_choices[df_choices['list_name'] == list_name]
+    
+    # Création du dictionnaire interne
+    mappings[clean_list_name] = dict(zip(
+        subset['value'].astype(str).str.strip(), 
+        subset['label'].astype(str).str.strip()
+    ))
 st.write("Aperçu des colonnes trouvées dans le fichier :", df_choices.columns.tolist())
 st.write("Nombre de lignes lues :", len(df_choices))
 st.write("Noms de listes trouvés :", df_choices['list_name'].unique().tolist())
