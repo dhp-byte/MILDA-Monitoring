@@ -547,24 +547,24 @@ class ReportGenerator:
         return json.dumps(report, ensure_ascii=False, indent=2)
 
 
-# URL brute (Raw) de votre fichier sur GitHub
-# Remplacez par votre propre lien (cliquez sur 'Raw' sur GitHub pour l'obtenir)
-GITHUB_CHOICES_URL = "https://github.com/dhp-byte/MILDA-Monitoring/blob/main/Choix.xlsx"
+# URL CORRIGÉE : Utilisation de /raw/ au lieu de /blob/
+GITHUB_CHOICES_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
 
 def load_github_mappings(url):
     try:
-        # Téléchargement du fichier Excel
-        response = requests.get(url)
+        # Téléchargement sécurisé
+        response = requests.get(url, timeout=10)
         response.raise_for_status()
         
-        # Lecture de l'onglet 'choices' (ou adapter le nom de la feuille)
+        # Lecture du fichier Excel
         df_choices = pd.read_excel(BytesIO(response.content), sheet_name='choices')
         df_choices.columns = df_choices.columns.str.strip()
         
         # Création des dictionnaires
         def get_dict(list_name):
             subset = df_choices[df_choices['list_name'] == list_name]
-            return dict(zip(subset['value'].astype(str), subset['label']))
+            # On s'assure que value et label sont propres
+            return dict(zip(subset['value'].astype(str), subset['label'].astype(str)))
 
         return {
             'province': get_dict('province'),
@@ -573,11 +573,15 @@ def load_github_mappings(url):
             'village': get_dict('village')
         }
     except Exception as e:
-        print(f"Erreur lors du chargement des choix GitHub : {e}")
+        # Affichage de l'erreur dans la console Streamlit pour débogage
+        print(f"⚠️ Erreur GitHub : {e}")
         return None
 
-# Chargement initial des mappings
+# Chargement des dictionnaires au démarrage
 mappings = load_github_mappings(GITHUB_CHOICES_URL)
+
+
+    
 
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
@@ -621,17 +625,23 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                 break
     data = data.rename(columns=rename_dict)
 
+    # 2. APPLICATION DU MAPPING DES VALEURS (Codes -> Noms réels)
     if mappings:
-        cols_to_map = {
-            'province': mappings['province'],
-            'district': mappings['district'],
-            'centre_sante': mappings['cs'],
-            'village': mappings['village']
-        }
-        for col, dico in cols_to_map.items():
-            if col in data.columns:
-                # On convertit en string pour correspondre aux clés du dico
-                data[col] = data[col].astype(str).map(dico).fillna(data[col])
+        # Mapping Province
+        if 'province' in data.columns:
+            data['province'] = data['province'].astype(str).map(mappings['province']).fillna(data['province'])
+        
+        # Mapping District
+        if 'district' in data.columns:
+            data['district'] = data['district'].astype(str).map(mappings['district']).fillna(data['district'])
+
+        # Mapping Centre de Santé
+        if 'centre_sante' in data.columns:
+            data['centre_sante'] = data['centre_sante'].astype(str).map(mappings['cs']).fillna(data['centre_sante'])
+            
+        # Mapping Village
+        if 'village' in data.columns:
+            data['village'] = data['village'].astype(str).map(mappings['village']).fillna(data['village'])
                 
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
