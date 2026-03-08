@@ -547,6 +547,38 @@ class ReportGenerator:
         return json.dumps(report, ensure_ascii=False, indent=2)
 
 
+# URL brute (Raw) de votre fichier sur GitHub
+# Remplacez par votre propre lien (cliquez sur 'Raw' sur GitHub pour l'obtenir)
+GITHUB_CHOICES_URL = "https://raw.githubusercontent.com/votre_nom/votre_depot/main/choix.xlsx"
+
+def load_github_mappings(url):
+    try:
+        # Téléchargement du fichier Excel
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        # Lecture de l'onglet 'choices' (ou adapter le nom de la feuille)
+        df_choices = pd.read_excel(BytesIO(response.content), sheet_name='choices')
+        df_choices.columns = df_choices.columns.str.strip()
+        
+        # Création des dictionnaires
+        def get_dict(list_name):
+            subset = df_choices[df_choices['list_name'] == list_name]
+            return dict(zip(subset['value'].astype(str), subset['label']))
+
+        return {
+            'province': get_dict('province'),
+            'district': get_dict('district'),
+            'cs': get_dict('cs'),
+            'village': get_dict('village')
+        }
+    except Exception as e:
+        print(f"Erreur lors du chargement des choix GitHub : {e}")
+        return None
+
+# Chargement initial des mappings
+mappings = load_github_mappings(GITHUB_CHOICES_URL)
+
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
@@ -589,6 +621,18 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                 break
     data = data.rename(columns=rename_dict)
 
+    if mappings:
+        cols_to_map = {
+            'province': mappings['province'],
+            'district': mappings['district'],
+            'centre_sante': mappings['cs'],
+            'village': mappings['village']
+        }
+        for col, dico in cols_to_map.items():
+            if col in data.columns:
+                # On convertit en string pour correspondre aux clés du dico
+                data[col] = data[col].astype(str).map(dico).fillna(data[col])
+                
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
         coords = data['latitude']
