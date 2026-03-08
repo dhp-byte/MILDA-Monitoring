@@ -546,6 +546,16 @@ class ReportGenerator:
         
         return json.dumps(report, ensure_ascii=False, indent=2)
 
+def safe_map(df, column, mapping_dict):
+    """Applique le mapping de manière sécurisée sans perdre de données"""
+    if column in df.columns and mapping_dict:
+        # 1. Conversion en string et nettoyage des espaces
+        df[column] = df[column].astype(str).str.strip()
+        # 2. Nettoyage du dictionnaire (clés en string et sans espaces)
+        clean_map = {str(k).strip(): str(v).strip() for k, v in mapping_dict.items()}
+        # 3. Application : si la clé n'est pas trouvée, on garde la valeur d'origine
+        df[column] = df[column].replace(clean_map)
+    return df
 
 # URL CORRIGÉE : Utilisation de /raw/ au lieu de /blob/
 GITHUB_CHOICES_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
@@ -622,23 +632,11 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                 break
     data = data.rename(columns=rename_dict)
 
-    # 2. APPLICATION DU MAPPING DES VALEURS (Codes -> Noms réels)
     if mappings:
-        # Mapping Province
-        if 'province' in data.columns:
-            data['province'] = data['province'].astype(str).map(mappings['province']).fillna(data['province'])
-        
-        # Mapping District
-        if 'district' in data.columns:
-            data['district'] = data['district'].astype(str).map(mappings['district']).fillna(data['district'])
-
-        # Mapping Centre de Santé
-        if 'centre_sante' in data.columns:
-            data['centre_sante'] = data['centre_sante'].astype(str).map(mappings['cs']).fillna(data['centre_sante'])
-            
-        # Mapping Village
-        if 'village' in data.columns:
-            data['village'] = data['village'].astype(str).map(mappings['village']).fillna(data['village'])
+        data = safe_map(data, 'province', mappings.get('province'))
+        data = safe_map(data, 'district', mappings.get('district'))
+        data = safe_map(data, 'centre_sante', mappings.get('cs'))
+        data = safe_map(data, 'village', mappings.get('village'))
                 
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
