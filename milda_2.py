@@ -21,6 +21,7 @@ import zipfile
 import re
 import math
 import json
+from io import BytesIO 
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import warnings
@@ -557,36 +558,6 @@ def safe_map(df, column, mapping_dict):
         df[column] = df[column].replace(clean_map)
     return df
 
-# URL CORRIGÉE : Utilisation de /raw/ au lieu de /blob/
-GITHUB_CHOICES_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
-
-import pandas as pd
-import requests
-from io import BytesIO  # <-- C'EST CETTE LIGNE QUI MANQUE
-# Chargement des dictionnaires au démarrage
-
-
-# MAPPING OFFICIEL PHASE 1 - 2026
-MAPPINGS_STATIQUES = {
-    'province': {
-        '1': 'LOGONE OCCIDENTAL', '2': 'LOGONE ORIENTAL', '3': 'MANDOUL',
-        '4': 'MOYEN-CHARI', '5': 'SALAMAT', '6': 'SILA'
-    },
-    'district': {
-        '1': 'BEBALEM', '2': 'BEINAMAR', '3': 'BENOYE', '4': 'KRIM-KRIM',
-        '5': 'LAOUKASSY', '6': 'MOUNDOU CENTRE', '7': 'MOUNDOU EST', '8': 'MOUNDOU OUEST',
-        '9': 'BAIBOKOUM', '10': 'BEBEDJIA', '11': 'BEBOTO', '12': 'BESSAO',
-        '13': 'BODO', '14': 'DOBA', '15': 'DONIA', '16': 'GORE',
-        '20': 'BEDAYA', '21': 'BEDJONDO', '22': 'BEKOUROU', '29': 'BALIMBA'
-        # Ajoutez les autres districts ici selon votre fichier Choix
-    },
-    'cs': {
-        '553': 'BARAKALLAH', '554': 'BIERE', '555': 'BIRBINAT FAZI',
-        '556': 'CHAMBOLI', '557': 'ECHBARA', '558': 'FADJE'
-        # Ajoutez les centres de santé prioritaires ici
-    }
-}
-
 def load_github_mappings(url):
     try:
         response = requests.get(url, timeout=15)
@@ -616,47 +587,6 @@ def load_github_mappings(url):
         st.error(f"Erreur lors du chargement du fichier Excel : {e}")
         return None
         
-def load_github_mappings_debug(url):
-    try:
-        response = requests.get(url, timeout=15)
-        response.raise_for_status()
-        
-        # On charge tout le fichier sans filtre d'abord
-        xls = pd.ExcelFile(BytesIO(response.content))
-        
-        # Vérification des noms de feuilles disponibles
-        if 'Choices' not in xls.sheet_names:
-            print(f"❌ Erreur : La feuille 'Choices' n'existe pas. Feuilles trouvées : {xls.sheet_names}")
-            return None
-
-        df_choices = pd.read_excel(xls, sheet_name='Choices', dtype=str)
-        
-        # Suppression des lignes totalement vides
-        df_choices = df_choices.dropna(subset=['list_name', 'value'])
-        
-        mappings = {}
-        for list_name in df_choices['list_name'].unique():
-            # Nettoyage strict
-            clean_list_name = str(list_name).strip()
-            subset = df_choices[df_choices['list_name'] == list_name]
-            
-            mappings[clean_list_name] = dict(zip(
-                subset['value'].str.strip(), 
-                subset['label'].str.strip()
-            ))
-        
-        if not mappings:
-            print("⚠️ Le dictionnaire a été créé mais il est vide. Vérifiez le contenu des colonnes.")
-            
-        return mappings
-
-    except Exception as e:
-        print(f"❌ Erreur réseau ou format : {e}")
-        return None
-
-
-
-
 # URL vers votre fichier (format RAW)
 GITHUB_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
 mappings = load_github_mappings(GITHUB_CHOICES_URL)
