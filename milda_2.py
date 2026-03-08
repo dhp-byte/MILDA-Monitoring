@@ -653,11 +653,12 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     data = data.rename(columns=rename_dict)
 
     # 3. Application du Mapping Direct
-    for col, map_key in [('province', 'province'), ('district', 'district'), ('centre_sante', 'cs')]:
-        if col in data.columns:
-            # Force la colonne en string et applique le dictionnaire
-            data[col] = data[col].astype(str).str.strip()
-            data[col] = data[col].replace(MAPPINGS_STATIQUES[map_key])
+    # 2. APPLICATION DU MAPPING DES VALEURS (Codes -> Noms réels)
+    if mappings:
+        data = safe_map(data, 'province', mappings.get('province'))
+        data = safe_map(data, 'district', mappings.get('district'))
+        data = safe_map(data, 'centre_sante', mappings.get('cs'))
+        data = safe_map(data, 'village', mappings.get('village'))
                 
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
