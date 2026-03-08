@@ -549,7 +549,7 @@ class ReportGenerator:
 
 # URL brute (Raw) de votre fichier sur GitHub
 # Remplacez par votre propre lien (cliquez sur 'Raw' sur GitHub pour l'obtenir)
-GITHUB_CHOICES_URL = "https://raw.githubusercontent.com/votre_nom/votre_depot/main/choix.xlsx"
+GITHUB_CHOICES_URL = "https://github.com/dhp-byte/MILDA-Monitoring/blob/main/Choix.xlsx"
 
 def load_github_mappings(url):
     try:
