@@ -560,33 +560,9 @@ def safe_map(df, column, mapping_dict):
 # URL CORRIGÉE : Utilisation de /raw/ au lieu de /blob/
 GITHUB_CHOICES_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
 
-def load_github_mappings(url):
-    try:
-        # Téléchargement sécurisé
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        # Lecture du fichier Excel
-        df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choices')
-        df_choices.columns = df_choices.columns.str.strip()
-        
-        # Création des dictionnaires
-        def get_dict(list_name):
-            subset = df_choices[df_choices['list_name'] == list_name]
-            # On s'assure que value et label sont propres
-            return dict(zip(subset['value'].astype(str), subset['label'].astype(str)))
-
-        return {
-            'province': get_dict('province'),
-            'district': get_dict('district'),
-            'cs': get_dict('cs'),
-            'village': get_dict('village')
-        }
-    except Exception as e:
-        # Affichage de l'erreur dans la console Streamlit pour débogage
-        print(f"⚠️ Erreur GitHub : {e}")
-        return None
-
+import pandas as pd
+import requests
+from io import BytesIO  # <-- C'EST CETTE LIGNE QUI MANQUE
 # Chargement des dictionnaires au démarrage
 mappings = load_github_mappings(GITHUB_CHOICES_URL)
 
@@ -611,6 +587,35 @@ MAPPINGS_STATIQUES = {
     }
 }
 
+def load_github_mappings(url):
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        
+        # Utilisation de BytesIO après l'avoir importé
+        df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choices', dtype=str)
+        
+        # Nettoyage automatique des noms de colonnes (enlève les espaces)
+        df_choices.columns = df_choices.columns.str.strip()
+        
+        # On ignore les lignes où list_name ou value est vide
+        df_choices = df_choices.dropna(subset=['list_name', 'value'])
+        
+        mappings = {}
+        for list_name in df_choices['list_name'].unique():
+            subset = df_choices[df_choices['list_name'] == list_name]
+            # Création du dictionnaire : on strip() les valeurs pour éviter les erreurs de mapping
+            mappings[str(list_name).strip()] = dict(zip(
+                subset['value'].str.strip(), 
+                subset['label'].str.strip()
+            ))
+        
+        return mappings
+    except Exception as e:
+        # Affichage de l'erreur réelle pour vous aider à débugger
+        st.error(f"Erreur lors du chargement du fichier Excel : {e}")
+        return None
+        
 def load_github_mappings_debug(url):
     try:
         response = requests.get(url, timeout=15)
