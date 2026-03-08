@@ -1012,6 +1012,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     
     st.markdown("## 📊 Vue d'ensemble")
     st.dataframe(data)
+    st.sidebar.write(mappings)
     # Calcul des métriques
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
     quality_score = MetricsCalculator.calculate_quality_score(metrics)
