@@ -589,16 +589,7 @@ def load_github_mappings(url):
         
 # URL vers votre fichier (format RAW)
 GITHUB_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
-mappings = load_github_mappings(GITHUB_CHOICES_URL)
-
-if mappings:
-    st.success(f"Dictionnaire chargé : {list(mappings.keys())} listes trouvées.")
-    # Affiche un petit morceau pour vérifier les noms
-    if 'province' in mappings:
-        st.write("Exemple Province :", mappings['province'])
-else:
-    st.error("Le dictionnaire est vide. Vérifiez la console pour les détails de l'erreur.")
-
+mappings = load_github_mappings(GITHUB_URL)
 
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
