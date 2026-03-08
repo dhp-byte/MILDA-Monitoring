@@ -557,7 +557,7 @@ def load_github_mappings(url):
         response.raise_for_status()
         
         # Lecture du fichier Excel
-        df_choices = pd.read_excel(BytesIO(response.content), sheet_name='choices')
+        df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choices')
         df_choices.columns = df_choices.columns.str.strip()
         
         # Création des dictionnaires
