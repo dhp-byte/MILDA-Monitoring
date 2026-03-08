@@ -610,6 +610,39 @@ MAPPINGS_STATIQUES = {
         # Ajoutez les centres de santé prioritaires ici
     }
 }
+
+def get_clean_mappings_from_github(url):
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        
+        # On force la lecture en STRING pour 'value' et 'label'
+        df_choices = pd.read_excel(
+            BytesIO(response.content), 
+            sheet_name='Choices',
+            dtype={'list_name': str, 'value': str, 'label': str}
+        )
+        
+        # Nettoyage radical : suppression des espaces et conversion en minuscules pour list_name
+        df_choices['list_name'] = df_choices['list_name'].str.strip()
+        df_choices['value'] = df_choices['value'].str.strip()
+        df_choices['label'] = df_choices['label'].str.strip()
+        
+        # Construction du dictionnaire
+        mappings = {}
+        for list_name in df_choices['list_name'].unique():
+            subset = df_choices[df_choices['list_name'] == list_name]
+            # On crée un dictionnaire propre pour chaque catégorie
+            mappings[list_name] = dict(zip(subset['value'], subset['label']))
+            
+        return mappings
+    except Exception as e:
+        print(f"Erreur lors de la récupération du fichier : {e}")
+        return None
+
+# URL vers votre fichier (format RAW)
+GITHUB_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
+mappings = get_clean_mappings_from_github(GITHUB_URL)
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
@@ -652,13 +685,30 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                 break
     data = data.rename(columns=rename_dict)
 
-    # 3. Application du Mapping Direct
-    # 2. APPLICATION DU MAPPING DES VALEURS (Codes -> Noms réels)
     if mappings:
-        data = safe_map(data, 'province', mappings.get('province'))
-        data = safe_map(data, 'district', mappings.get('district'))
-        data = safe_map(data, 'centre_sante', mappings.get('cs'))
-        data = safe_map(data, 'village', mappings.get('village'))
+        # Correspondance entre vos noms de colonnes et les list_name du Excel
+        config = {
+            'province': 'province',
+            'district': 'district',
+            'centre_sante': 'cs',
+            'village': 'village'
+        }
+
+        for col, list_name in config.items():
+            if col in data.columns:
+                # 1. Normalisation de la colonne de données (KoBo/Excel)
+                # On transforme en string, on retire les ".0" (cas des chiffres lus comme float)
+                data[col] = (
+                    data[col]
+                    .astype(str)
+                    .str.replace(r'\.0$', '', regex=True)
+                    .str.strip()
+                )
+                
+                # 2. Remplacement sécurisé
+                # Si le code n'est pas trouvé dans le mapping, il garde sa valeur brute
+                if list_name in mappings:
+                    data[col] = data[col].replace(mappings[list_name])
                 
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
