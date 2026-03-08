@@ -547,16 +547,6 @@ class ReportGenerator:
         
         return json.dumps(report, ensure_ascii=False, indent=2)
 
-def safe_map(df, column, mapping_dict):
-    """Applique le mapping de manière sécurisée sans perdre de données"""
-    if column in df.columns and mapping_dict:
-        # 1. Conversion en string et nettoyage des espaces
-        df[column] = df[column].astype(str).str.strip()
-        # 2. Nettoyage du dictionnaire (clés en string et sans espaces)
-        clean_map = {str(k).strip(): str(v).strip() for k, v in mapping_dict.items()}
-        # 3. Application : si la clé n'est pas trouvée, on garde la valeur d'origine
-        df[column] = df[column].replace(clean_map)
-    return df
 
 def load_github_mappings(url):
     try:
@@ -959,8 +949,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     """Page principale du dashboard"""
     
     st.markdown("## 📊 Vue d'ensemble")
-    st.dataframe(data)
-    st.dataframe(mappings)
+    
     # Calcul des métriques
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
     quality_score = MetricsCalculator.calculate_quality_score(metrics)
