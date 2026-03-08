@@ -663,6 +663,10 @@ if mappings:
         st.write("Exemple Province :", mappings['province'])
 else:
     st.error("Le dictionnaire est vide. Vérifiez la console pour les détails de l'erreur.")
+# Affichez ceci temporairement pour diagnostiquer
+st.write("Aperçu des colonnes trouvées dans le fichier :", df_choices.columns.tolist())
+st.write("Nombre de lignes lues :", len(df_choices))
+st.write("Noms de listes trouvés :", df_choices['list_name'].unique().tolist())
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
