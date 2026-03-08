@@ -590,6 +590,26 @@ def load_github_mappings(url):
 # Chargement des dictionnaires au démarrage
 mappings = load_github_mappings(GITHUB_CHOICES_URL)
 
+# MAPPING OFFICIEL PHASE 1 - 2026
+MAPPINGS_STATIQUES = {
+    'province': {
+        '1': 'LOGONE OCCIDENTAL', '2': 'LOGONE ORIENTAL', '3': 'MANDOUL',
+        '4': 'MOYEN-CHARI', '5': 'SALAMAT', '6': 'SILA'
+    },
+    'district': {
+        '1': 'BEBALEM', '2': 'BEINAMAR', '3': 'BENOYE', '4': 'KRIM-KRIM',
+        '5': 'LAOUKASSY', '6': 'MOUNDOU CENTRE', '7': 'MOUNDOU EST', '8': 'MOUNDOU OUEST',
+        '9': 'BAIBOKOUM', '10': 'BEBEDJIA', '11': 'BEBOTO', '12': 'BESSAO',
+        '13': 'BODO', '14': 'DOBA', '15': 'DONIA', '16': 'GORE',
+        '20': 'BEDAYA', '21': 'BEDJONDO', '22': 'BEKOUROU', '29': 'BALIMBA'
+        # Ajoutez les autres districts ici selon votre fichier Choix
+    },
+    'cs': {
+        '553': 'BARAKALLAH', '554': 'BIERE', '555': 'BIRBINAT FAZI',
+        '556': 'CHAMBOLI', '557': 'ECHBARA', '558': 'FADJE'
+        # Ajoutez les centres de santé prioritaires ici
+    }
+}
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
@@ -632,11 +652,12 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                 break
     data = data.rename(columns=rename_dict)
 
-    if mappings:
-        data = safe_map(data, 'province', mappings.get('province'))
-        data = safe_map(data, 'district', mappings.get('district'))
-        data = safe_map(data, 'centre_sante', mappings.get('cs'))
-        data = safe_map(data, 'village', mappings.get('village'))
+    # 3. Application du Mapping Direct
+    for col, map_key in [('province', 'province'), ('district', 'district'), ('centre_sante', 'cs')]:
+        if col in data.columns:
+            # Force la colonne en string et applique le dictionnaire
+            data[col] = data[col].astype(str).str.strip()
+            data[col] = data[col].replace(MAPPINGS_STATIQUES[map_key])
                 
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
