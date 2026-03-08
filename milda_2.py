@@ -580,9 +580,6 @@ def load_github_mappings(url):
 # Chargement des dictionnaires au démarrage
 mappings = load_github_mappings(GITHUB_CHOICES_URL)
 
-
-    
-
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
@@ -2330,7 +2327,8 @@ def main():
                                     # Traitement universel (Mapping + Indicateurs + Nettoyage)
                                     # Note: Cette fonction doit contenir la logique de mapping S1Q17 -> menage_servi
                                     data, stats = process_milda_dataframe(df_raw) 
-                                    
+
+                                    st.write(data[['province', 'centre_sante']].head())
                                     st.session_state.data = data
                                     st.session_state.tables = generate_analysis_tables(data)
                                     st.success(f"✅ {len(data)} enregistrements chargés !")
