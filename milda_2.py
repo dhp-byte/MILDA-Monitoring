@@ -588,14 +588,14 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     """Applique la logique métier commune à Excel et KoBo"""
     # 1. Mapping des colonnes (votre dictionnaire existant)
     column_mapping = {
-            'province': ['province', 'Province', 'S0Q04'],
-            'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q05'],
-            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q06'],
+            'province': ['province', 'Province', 'S0Q02'],
+            'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q06'],
+            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q07'],
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
             'start': ['start'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
-            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q03'],
-            'village': ['village', 'Village/Avenue/Quartier', 'S0Q07'],
+            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
+            'village': ['village', 'Village/Avenue/Quartier', 'S0Q08'],
             'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'gr_1/S1Q2'],
             'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
@@ -609,6 +609,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
             'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
             'raison' : ['Sélectionner la raison', 'S1Q25'],
+            'conseil' : ['sensibilisation', 'Au cours du mois dernier, quelles instructions d'utilisation et d'entretien des moustiquaires avez-vous vues ou entendues?'],
             'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
         }
 
