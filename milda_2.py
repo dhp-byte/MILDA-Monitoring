@@ -1513,7 +1513,7 @@ def page_agent_tracking(data: pd.DataFrame):
         
         # Petit tableau chronologique en dessous pour vérification
         with st.expander("📄 Voir le journal de bord de l'agent"):
-            st.dataframe(agent_path[['timestamp', 'province', 'district', 'village', 'nb_personnes','Duree Interview (min)']], use_container_width=True)
+            st.dataframe(agent_path[['province', 'district', 'village', 'nb_personnes','Duree Interview (min)']], use_container_width=True)
 
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
