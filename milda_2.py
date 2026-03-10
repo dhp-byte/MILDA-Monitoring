@@ -786,21 +786,33 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
         
         # Mapping des colonnes (version robuste)
         column_mapping = {
-            'province': ['province', 'Province', 'S0Q04'],
-            'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q05'],
-            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q06'],
+            'province': ['province', 'Province', 'S0Q02'],
+            'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q06'],
+            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q07'],
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
+            'start': ['start'],
+            'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
+            'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
-            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q03'],
-            'village': ['village', 'Village/Avenue/Quartier', 'S0Q07'],
+            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
+            'village': ['village', 'Village/Avenue/Quartier', 'S0Q08'],
+            'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'gr_1/S1Q2'],
             'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
             'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
+            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
-            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude'],
-            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude']
+            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
+            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
+            'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
+            'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
+            'raison' : ['Sélectionner la raison', 'S1Q25'],
+            'raison_scan' : ["${agent_name},Pourquoi vous n'avez pas pu scanner nombre codes QR corresondant aux MILDA reçu dans le ménage?", 'rsn'],
+            'source': ['Où avez-vous vu ou entendu ces informations ?', 'source'],
+            'conseil' : ['sensibilisation', "Au cours du mois dernier, quelles instructions d'utilisation et d'entretien des moustiquaires avez-vous vues ou entendues?"],
+            'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
         }
         
         # Appliquer le mapping
@@ -1587,6 +1599,29 @@ def page_data_quality(data: pd.DataFrame):
         return
     
     df_qc = data.copy()
+
+    # --- SECTION FILTRES ---
+    st.sidebar.header("📍 Filtres Géographiques")
+    
+    # Filtre Province
+    provinces = ["Toutes"] + sorted(df_qc['province'].dropna().unique().tolist())
+    sel_prov = st.sidebar.selectbox("Choisir une Province", provinces)
+    if sel_prov != "Toutes":
+        df_qc = df_qc[df_qc['province'] == sel_prov]
+
+    # Filtre Centre de Santé (dépend de la province)
+    cs_list = ["Tous"] + sorted(df_qc['centre_sante'].dropna().unique().tolist())
+    sel_cs = st.sidebar.selectbox("Choisir un Centre de Santé", cs_list)
+    if sel_cs != "Tous":
+        df_qc = df_qc[df_qc['centre_sante'] == sel_cs]
+
+    # Filtre Village (dépend du CS)
+    villages = ["Tous"] + sorted(df_qc['village'].dropna().unique().tolist())
+    sel_vill = st.sidebar.selectbox("Choisir un Village", villages)
+    if sel_vill != "Tous":
+        df_qc = df_qc[df_qc['village'] == sel_vill]
+
+    st.divider()
     
     # Conversion forcée pour éviter AttributeError
     df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
