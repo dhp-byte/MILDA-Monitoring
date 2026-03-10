@@ -592,6 +592,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q05'],
             'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q06'],
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
+            'start': ['start'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
             'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q03'],
             'village': ['village', 'Village/Avenue/Quartier', 'S0Q07'],
@@ -1427,7 +1428,18 @@ def page_agent_tracking(data: pd.DataFrame):
     # 2. Préparation des données
     df_track = data.copy()
     df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
-    
+
+    if 'start' in df_track.columns and 'end' in df_track.columns:
+        df_track['start'] = pd.to_datetime(df_track['start'], errors='coerce')
+        df_track['end'] = pd.to_datetime(df_track['heure_interview'], errors='coerce')
+        
+        # Calcul de la durée en minutes
+        df_track['duree_min'] = (df_track['end'] - df_track['start']).dt.total_seconds() / 60
+        # On arrondit pour le tableau
+        df_track['duree_min'] = df_track['duree_min'].round(1)
+    else:
+        df_track['duree_min'] = "N/A"
+        
     if 'heure_interview' in df_track.columns:
         df_track['timestamp'] = pd.to_datetime(
             df_track['date_enquete'].dt.date.astype(str) + ' ' + df_track['heure_interview'].astype(str),
@@ -1501,7 +1513,7 @@ def page_agent_tracking(data: pd.DataFrame):
         
         # Petit tableau chronologique en dessous pour vérification
         with st.expander("📄 Voir le journal de bord de l'agent"):
-            st.dataframe(agent_path[['timestamp', 'province', 'district', 'village', 'nb_personnes']], use_container_width=True)
+            st.dataframe(agent_path[['timestamp', 'province', 'district', 'village', 'nb_personnes','duree_min']], use_container_width=True)
 
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
