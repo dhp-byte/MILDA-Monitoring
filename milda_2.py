@@ -1828,18 +1828,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         st.error("❌ Bibliothèque python-docx non disponible. Installez-la avec: pip install python-docx")
         return None
     data = data.copy()
-    yes_no_map = {1: 'Oui', 0: 'Non', '1': 'Oui', '0': 'Non', 'yes': 'Oui', 'no': 'Non'}
     
-    cols_to_translate = ['menage_chef', 'menage_servi', 'norme', 'menage_marque', 'information']
-    for col in cols_to_translate:
-        if col in data.columns:
-            data[col] = data[col].replace(yes_no_map)
-
-    # Traduction des Provinces et Districts (si mappings dispo)
-    if mappings:
-        for col, key in [('province', 'province'), ('district', 'district'), ('centre_sante', 'cs')]:
-            if col in data.columns:
-                data[col] = data[col].astype(str).replace(mappings.get(key, {}))
     # Créer le document
     doc = Document()
     
