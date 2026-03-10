@@ -629,6 +629,8 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q07'],
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
             'start': ['start'],
+            'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
+            'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
             'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
             'village': ['village', 'Village/Avenue/Quartier', 'S0Q08'],
@@ -645,6 +647,8 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
             'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
             'raison' : ['Sélectionner la raison', 'S1Q25'],
+            'raison_scan' : ['${agent_name},Pourquoi vous n'avez pas pu scanner nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn'],
+            'source': ['Où avez-vous vu ou entendu ces informations ?', 'source'],
             'conseil' : ['sensibilisation', "Au cours du mois dernier, quelles instructions d'utilisation et d'entretien des moustiquaires avez-vous vues ou entendues?"],
             'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
         }
@@ -662,29 +666,48 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     data = data.rename(columns=rename_dict)
 
     if mappings:
-        # Correspondance entre vos noms de colonnes et les list_name du Excel
+        # Configuration étendue avec vos nouvelles variables
         config = {
             'province': 'province',
             'district': 'district',
             'centre_sante': 'cs',
-            'village': 'village'
+            'village': 'village',
+            'sexe': 'sexe',
+            'activ_rev': 'activ_rev',
+            'raison': 'raison',          # Choix multiples possibles
+            'conseil': 'conseil',        # Choix multiples possibles
+            'source': 'source',          # Choix multiples possibles
+            'raison_scan': 'raison_scan'
         }
+
+        # Liste spécifique des colonnes qui peuvent avoir plusieurs réponses (Select Multiple)
+        multi_choice_cols = ['raison', 'conseil', 'source']
 
         for col, list_name in config.items():
             if col in data.columns:
-                # 1. Normalisation de la colonne de données (KoBo/Excel)
-                # On transforme en string, on retire les ".0" (cas des chiffres lus comme float)
+                # Nettoyage de base (String, suppression du .0, suppression des espaces)
                 data[col] = (
                     data[col]
                     .astype(str)
                     .str.replace(r'\.0$', '', regex=True)
                     .str.strip()
+                    .replace('nan', '') # On évite d'afficher "nan"
                 )
                 
-                # 2. Remplacement sécurisé
-                # Si le code n'est pas trouvé dans le mapping, il garde sa valeur brute
                 if list_name in mappings:
-                    data[col] = data[col].replace(mappings[list_name])
+                    if col in multi_choice_cols:
+                        # --- LOGIQUE POUR CHOIX MULTIPLES ---
+                        def decode_multi(val, mapping_dict):
+                            if not val or val == '': return val
+                            # On sépare par l'espace (standard KoBo), on traduit, on rejoint par virgule
+                            codes = str(val).split()
+                            labels = [mapping_dict.get(c, c) for c in codes]
+                            return ", ".join(labels)
+                        
+                        data[col] = data[col].apply(lambda x: decode_multi(x, mappings[list_name]))
+                    else:
+                        # --- LOGIQUE POUR CHOIX UNIQUE ---
+                        data[col] = data[col].replace(mappings[list_name])
                 
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
