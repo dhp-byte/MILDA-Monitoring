@@ -1429,7 +1429,7 @@ def page_agent_tracking(data: pd.DataFrame):
     df_track = data.copy()
     df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
 
-    if 'start' in df_track.columns and 'end' in df_track.columns:
+    if 'start' in df_track.columns and 'heure_interview' in df_track.columns:
         df_track['start'] = pd.to_datetime(df_track['start'], errors='coerce')
         df_track['end'] = pd.to_datetime(df_track['heure_interview'], errors='coerce')
         
