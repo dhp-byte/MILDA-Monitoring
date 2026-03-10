@@ -1847,7 +1847,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_page_break()
     
     # ========== CARACTÉRISTIQUES DES MÉNAGES ==========
-    doc.add_heading(Profil du Chef de Ménage', level=1)
+    doc.add_heading('Profil du Chef de Ménage', level=1)
     
     # Tableau 1: Proportion des chefs de ménage
     doc.add_heading('Tableau : Proportion des chefs des ménages enquêtés', level=2)
@@ -2185,6 +2185,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     # Optionnel : Ajouter le graphique correspondant
     diff_stats = (data['diff_label'].value_counts(normalize=True) * 100)
     add_matplotlib_chart(doc, diff_stats, 'Respect de la norme de distribution (%)', 'bar')
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
     # ========== CALCUL DES COMPTEURS DE SCANS (À ajouter au début de la fonction) ==========
 
@@ -2213,6 +2214,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         ["Nombre moustiquaire reçu", int(total_recues), "100"]
     ]
     create_table(doc, table_scan, ["Moustiquaire", "Effectif", "Fréquence (%)"])
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
     # ========== RAISONS NON SCAN & SENSIBILISATION ==========
     # Raison non-scan (raison_scan)
@@ -2225,7 +2227,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             total_non_scan = len(df_non_scan)
             table_raison = [[v, c, f"{(c/total_non_scan*100):.1f}"] for v, c in raison_counts.items()]
             create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
-
+            doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
     # ========== INFORMATION CAMPAGNE ==========
     doc.add_heading('1.1 Information de la campagne de distribution', level=1)
@@ -2239,6 +2241,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             ["Total", total_info, "100"]
         ]
     create_table(doc, table_6, ["Étiez-vous informé...", "Effectif", "Fréquence"])
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
     # ========== CONCLUSION ==========
     doc.add_page_break()
