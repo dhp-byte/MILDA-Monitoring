@@ -548,33 +548,69 @@ class ReportGenerator:
         return json.dumps(report, ensure_ascii=False, indent=2)
 
 
+import pandas as pd
+import requests
+from io import BytesIO
+import streamlit as st
+
 def load_github_mappings(url):
+    """
+    Télécharge le fichier Excel depuis GitHub et crée un dictionnaire 
+    de mapping structuré par list_name.
+    """
     try:
+        # 1. Récupération du fichier avec un timeout pour éviter de bloquer l'app
         response = requests.get(url, timeout=15)
         response.raise_for_status()
         
-        # Utilisation de BytesIO après l'avoir importé
-        df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choices', dtype=str)
+        # 2. Lecture du flux binaire Excel
+        # On force toutes les colonnes en 'str' pour éviter que les codes 
+        # numériques ne soient interprétés comme des nombres ou des floats.
+        df_choices = pd.read_excel(
+            BytesIO(response.content), 
+            sheet_name='Choices', 
+            dtype=str
+        )
         
-        # Nettoyage automatique des noms de colonnes (enlève les espaces)
+        # 3. Nettoyage des en-têtes de colonnes
         df_choices.columns = df_choices.columns.str.strip()
         
-        # On ignore les lignes où list_name ou value est vide
+        # 4. Suppression des lignes totalement vides ou incomplètes
+        # (Indispensable si le fichier Excel a des lignes fantômes en bas)
         df_choices = df_choices.dropna(subset=['list_name', 'value'])
         
+        # 5. Construction du dictionnaire de dictionnaires
+        # Structure : { 'nom_liste': { 'code': 'label' } }
         mappings = {}
+        
+        # On boucle sur chaque catégorie unique (province, district, sexe, etc.)
         for list_name in df_choices['list_name'].unique():
+            # Nettoyage du nom de la liste
+            clean_list_key = str(list_name).strip()
+            
+            # Extraction du sous-ensemble correspondant à cette liste
             subset = df_choices[df_choices['list_name'] == list_name]
-            # Création du dictionnaire : on strip() les valeurs pour éviter les erreurs de mapping
-            mappings[str(list_name).strip()] = dict(zip(
+            
+            # Création du mapping interne (Code -> Libellé)
+            # On applique .strip() sur les valeurs et labels pour éviter "1 " != "1"
+            mappings[clean_list_key] = dict(zip(
                 subset['value'].str.strip(), 
                 subset['label'].str.strip()
             ))
         
+        # Petit message de succès pour le debug (visible uniquement en console)
+        print(f"✅ Mapping chargé avec succès : {len(mappings)} listes extraites.")
+        
         return mappings
+
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ Erreur de connexion au dépôt GitHub : {e}")
+        return None
+    except ValueError as e:
+        st.error(f"❌ Erreur de format : Vérifiez que l'onglet s'appelle 'Choices'. Détails : {e}")
+        return None
     except Exception as e:
-        # Affichage de l'erreur réelle pour vous aider à débugger
-        st.error(f"Erreur lors du chargement du fichier Excel : {e}")
+        st.error(f"❌ Une erreur inattendue est survenue : {e}")
         return None
         
 # URL vers votre fichier (format RAW)
