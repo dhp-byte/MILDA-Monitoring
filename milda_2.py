@@ -1434,11 +1434,11 @@ def page_agent_tracking(data: pd.DataFrame):
         df_track['end'] = pd.to_datetime(df_track['heure_interview'], errors='coerce')
         
         # Calcul de la durée en minutes
-        df_track['Duree_Interview'] = (df_track['end'] - df_track['start']).dt.total_seconds() / 60
+        df_track['Duree Interview (min)'] = (df_track['end'] - df_track['start']).dt.total_seconds() / 60
         # On arrondit pour le tableau
-        df_track['Duree_Interview'] = df_track['Duree_Interview'].round(2)
+        df_track['Duree Interview (min)'] = df_track['Duree Interview (min)'].round(2)
     else:
-        df_track['Duree_Interview'] = "N/A"
+        df_track['Duree Interview (min)'] = "N/A"
         
     if 'heure_interview' in df_track.columns:
         df_track['timestamp'] = pd.to_datetime(
@@ -1513,7 +1513,7 @@ def page_agent_tracking(data: pd.DataFrame):
         
         # Petit tableau chronologique en dessous pour vérification
         with st.expander("📄 Voir le journal de bord de l'agent"):
-            st.dataframe(agent_path[['timestamp', 'province', 'district', 'village', 'nb_personnes','duree_min']], use_container_width=True)
+            st.dataframe(agent_path[['timestamp', 'province', 'district', 'village', 'nb_personnes','Duree Interview (min)']], use_container_width=True)
 
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
