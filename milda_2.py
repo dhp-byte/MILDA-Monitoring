@@ -1488,30 +1488,33 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
 def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
     
-    # 1. Barre latérale pour les filtres géographiques
-    #st.sidebar.header("📍 Secteur de Recherche")
-    
+    # 1. PREPARATION INITIALE & FILTRES GEOGRAPHIQUES (Directement dans la page)
     df_track = data.copy()
     
-    # Filtre Province
-    prov_list = ["Toutes"] + sorted(df_track['province'].dropna().unique().tolist())
-    sel_prov = st.sidebar.selectbox("Province", prov_list)
-    if sel_prov != "Toutes":
-        df_track = df_track[df_track['province'] == sel_prov]
+    # Création d'une ligne pour les 3 filtres géographiques
+    col_f1, col_f2, col_f3 = st.columns(3)
+    
+    with col_f1:
+        prov_list = ["Toutes"] + sorted(df_track['province'].dropna().unique().tolist())
+        sel_prov = st.selectbox("📍 Province", prov_list)
+        if sel_prov != "Toutes":
+            df_track = df_track[df_track['province'] == sel_prov]
 
-    # Filtre District
-    dist_list = ["Tous"] + sorted(df_track['district'].dropna().unique().tolist())
-    sel_dist = st.sidebar.selectbox("District", dist_list)
-    if sel_dist != "Tous":
-        df_track = df_track[df_track['district'] == sel_dist]
+    with col_f2:
+        dist_list = ["Tous"] + sorted(df_track['district'].dropna().unique().tolist())
+        sel_dist = st.selectbox("🏙️ District", dist_list)
+        if sel_dist != "Tous":
+            df_track = df_track[df_track['district'] == sel_dist]
 
-    # Filtre Village
-    vill_list = ["Tous"] + sorted(df_track['village'].dropna().unique().tolist())
-    sel_vill = st.sidebar.selectbox("Village", vill_list)
-    if sel_vill != "Tous":
-        df_track = df_track[df_track['village'] == sel_vill]
+    with col_f3:
+        vill_list = ["Tous"] + sorted(df_track['village'].dropna().unique().tolist())
+        sel_vill = st.selectbox("🏡 Village", vill_list)
+        if sel_vill != "Tous":
+            df_track = df_track[df_track['village'] == sel_vill]
 
-    # 2. Préparation des données temporelles
+    st.divider() # Petite ligne de séparation pour la clarté
+
+    # 2. PRÉPARATION DES DONNÉES TEMPORELLES
     df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
 
     if 'start' in df_track.columns and 'heure_interview' in df_track.columns:
@@ -1532,19 +1535,19 @@ def page_agent_tracking(data: pd.DataFrame):
 
     # Nettoyage et tri
     df_track = df_track.dropna(subset=['timestamp', 'latitude', 'longitude', 'agent_name'])
-    df_track['heure_texte'] = df_track['timestamp'].apply(lambda x: x.strftime('%H:%M'))
+    df_track['heure_texte'] = df_track['timestamp'].apply(lambda x: x.strftime('%H:%M') if pd.notnull(x) else "")
     df_track = df_track.sort_values(['agent_name', 'timestamp'])
 
-    # 3. Interface de sélection de l'agent et style
+    # 3. SÉLECTION DE L'AGENT ET STYLE DE CARTE
     col_c1, col_c2 = st.columns([2, 1])
     
     agents = sorted(df_track['agent_name'].unique())
     
     with col_c1:
         if len(agents) > 0:
-            selected_agent = st.selectbox("👤 Sélectionner un enquêteur", agents)
+            selected_agent = st.selectbox("👤 Sélectionner un enquêteur à suivre", agents)
         else:
-            st.warning("⚠️ Aucun agent trouvé pour cette sélection géographique.")
+            st.warning("⚠️ Aucun agent trouvé pour cette zone géographique.")
             return
 
     with col_c2:
@@ -1557,16 +1560,16 @@ def page_agent_tracking(data: pd.DataFrame):
     agent_path = df_track[df_track['agent_name'] == selected_agent].copy()
 
     if not agent_path.empty:
-        # 4. Création de la figure Mapbox
+        # 4. CONSTRUCTION DE LA CARTE
         fig = px.line_mapbox(
             agent_path,
             lat="latitude",
             lon="longitude",
             zoom=15 if "Satellite" in choix_carte else 12,
-            height=700
+            height=600
         )
         
-        # 5. Points d'enquête (Rouges)
+        # Points d'enquête (Rouges)
         fig.add_trace(go.Scattermapbox(
             lat=agent_path['latitude'],
             lon=agent_path['longitude'],
@@ -1578,17 +1581,7 @@ def page_agent_tracking(data: pd.DataFrame):
             name="Ménage visité"
         ))
 
-        # 6. Direction (Points noirs sur la ligne)
-        fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'],
-            lon=agent_path['longitude'],
-            mode='markers',
-            marker=go.scattermapbox.Marker(size=6, color='black'),
-            hoverinfo='skip',
-            showlegend=False
-        ))
-
-        # 7. Styles de cartes
+        # 5. CONFIGURATION DU STYLE DE CARTE
         if choix_carte == "Satellite (Détaillé)":
             fig.update_layout(
                 mapbox_style="white-bg",
@@ -1608,12 +1601,12 @@ def page_agent_tracking(data: pd.DataFrame):
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=True)
         st.plotly_chart(fig, use_container_width=True)
         
-        # 8. Journal de bord
+        # 6. JOURNAL DE BORD DÉTAILLÉ
         with st.expander("📄 Voir le journal de bord de l'agent"):
-            cols_to_show = ['timestamp', 'province', 'district', 'village', 'nb_personnes', 'Duree Interview (min)']
-            # On ne garde que les colonnes qui existent réellement pour éviter les erreurs
-            existing_cols = [c for c in cols_to_show if c in agent_path.columns]
-            st.dataframe(agent_path[existing_cols], use_container_width=True)
+            st.dataframe(
+                agent_path[['timestamp', 'province', 'district', 'village', 'nb_personnes', 'Duree Interview (min)']], 
+                use_container_width=True
+            )
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
 ################################################################################
