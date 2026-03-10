@@ -1847,7 +1847,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_page_break()
     
     # ========== CARACTÉRISTIQUES DES MÉNAGES ==========
-    doc.add_heading('Caractéristiques', level=1)
+    doc.add_heading(Profil du Chef de Ménage', level=1)
     
     # Tableau 1: Proportion des chefs de ménage
     doc.add_heading('Tableau : Proportion des chefs des ménages enquêtés', level=2)
@@ -1868,6 +1868,28 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             create_table(doc, table_data, ['Êtes-vous le Chef de ce ménage ?', 'Effectif', 'Fréquence'])
             doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
+    # Tableau Sexe
+    if 'sexe' in data.columns:
+        doc.add_heading('Tableau : Répartition des chefs de ménage par sexe', level=2)
+        sexe_counts = data['sexe'].value_counts()
+        total_s = len(data)
+        table_sexe = [[v, c, f"{(c/total_s*100):.1f}"] for v, c in sexe_counts.items()]
+        table_sexe.append(['Total', total_s, '100'])
+        create_table(doc, table_sexe, ['Sexe', 'Effectif', 'Fréquence (%)'])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+
+    # Tableau Activité (activ_rev)
+    if 'activ_rev' in data.columns:
+        doc.add_heading('Tableau : Activité principale du chef de ménage', level=2)
+        act_counts = data['activ_rev'].value_counts()
+        total_a = len(data)
+        table_act = [[v, c, f"{(c/total_a*100):.1f}"] for v, c in act_counts.items()]
+        table_act.append(['Total', total_a, '100'])
+        create_table(doc, table_act, ['Activité', 'Effectif', 'Fréquence (%)'])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+
+
+    
     # ========== SECTION : ANALYSE DE LA DISTRIBUTION ==========
     doc.add_heading('Analyse de la conformité de la distribution', level=1)
     
@@ -1896,35 +1918,14 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     table_rows.append(['Total', total_diff, '100'])
     create_table(doc, table_rows, ['Nombre de Différence', 'Effectif', 'Fréquence (%)'])
-    
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+
     # On prépare une série pour le graphique (sans la ligne Total)
-    #chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
-    #add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
+    chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
+    add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
+    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+
     doc.add_page_break()
-    
-    # ========== INDICATEURS DE QUALITÉ ==========
-    doc.add_heading('Indicateurs de qualité du dénombrement-distribution', level=1)
-    
-    # Calcul des métriques globales
-    total_menages = len(data)
-    menages_servis = (data['indic_servi'] == 1).sum()
-    menages_correct = (data['indic_correct'] == 1).sum()
-    menages_marques = (data['indic_marque'] == 1).sum()
-    menages_informes = (data['indic_info'] == 1).sum()
-    
-    pct_servis = round(100 * menages_servis / total_menages, 1) if total_menages > 0 else 0
-    pct_correct = round(100 * menages_correct / menages_servis, 1) if menages_servis > 0 else 0
-    pct_marques = round(100 * menages_marques / menages_servis, 1) if menages_servis > 0 else 0
-    pct_informes = round(100 * menages_informes / total_menages, 1) if total_menages > 0 else 0
-    
-    # Résumé textuel
-    doc.add_heading('Résumé global', level=2)
-    p = doc.add_paragraph()
-    p.add_run(f'Sur les {total_menages} ménages enquêtés :\n')
-    p.add_run(f'• {pct_servis}% ont été servis en MILDA\n')
-    p.add_run(f'• {pct_correct}% ont reçu le bon nombre de MILDA selon la norme\n')
-    p.add_run(f'• {pct_marques}% des ménages servis ont été marqués\n')
-    p.add_run(f'• {pct_informes}% ont été informés sur l\'utilisation correcte des MILDA\n')
     
     doc.add_heading('Ménages servis en MILDA', level=2)
     
@@ -1932,7 +1933,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         # Calcul du % de 'Oui' par CS
         stats_servis = data.groupby('centre_sante')['indic_servi'].mean() * 100
         add_matplotlib_chart(doc, stats_servis, 'Taux de couverture par Centre de Santé (%)', 'bar')
-        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     #add_chart_placeholder(doc, 'Pourcentage des ménages servis en MILDA par Centre de Santé')
     
     # Tableau par Centre de Santé
@@ -2026,7 +2027,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         # Taux de marquage parmi les ménages servis
         stats_marquage = data[data['indic_servi']==1].groupby('centre_sante')['indic_marque'].mean() * 100
         add_matplotlib_chart(doc, stats_marquage, 'Taux de marquage des ménages servis (%)', 'bar')
-        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     #add_chart_placeholder(doc, 'Pourcentage de ménages avec marquage par CS')
     
     if 'centre_sante' in data.columns:
@@ -2133,6 +2134,25 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             
             doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
+    # Source d'information (source)
+    if 'source' in data.columns:
+        doc.add_heading('Tableau : Sources d\'information sur la campagne', level=2)
+        # Gestion du choix multiple
+        source_series = data['source'].str.split(', ').explode().value_counts()
+        total_resp = len(data)
+        table_source = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in source_series.items()]
+        create_table(doc, table_source, ['Source citée', 'Effectif', '% de ménages'])
+        doc.add_paragraph("Note: Un ménage peut citer plusieurs sources.").italic = True
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+
+    # Instructions reçues (conseil)
+    if 'conseil' in data.columns:
+        doc.add_heading('Tableau : Instructions d\'utilisation reçues (Conseils)', level=2)
+        conseil_series = data['conseil'].str.split(', ').explode().value_counts()
+        table_conseil = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in conseil_series.items()]
+        create_table(doc, table_conseil, ['Conseil prodigué', 'Effectif', '% de ménages'])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+        
     # ========== ANALYSE DE LA DIFFÉRENCE ==========
     doc.add_heading('Tableau 3 : Différence des moustiquaires reçues', level=2)
     
@@ -2195,22 +2215,17 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     create_table(doc, table_scan, ["Moustiquaire", "Effectif", "Fréquence (%)"])
     
     # ========== RAISONS NON SCAN & SENSIBILISATION ==========
-    # Graphique : Instructions les plus citées
-    # Basé sur le champ 'sensibilisation' (select_multiple)
-    if 'raison' in data.columns:
-        doc.add_heading("Instructions d'utilisation et d'entretien les plus citées", level=2)
-    # On sépare les réponses multiples et on compte
-        sensi_counts = data['raison'].str.split(' ').explode().value_counts()
-          # Mapping des labels depuis Choix Kobo
-        sensi_labels = {
-                "1": "Il faut utiliser la moustiquaire toutes les nuits",
-                "2": "Les moustiquaires protègent contre le paludisme",
-                "3": "Entretien : nouez ou pliez votre moustiquaire",
-                "4": "Entretien : lavez à l'eau et au savon",
-                "5": "Entretien : séchez à l'ombre"
-          }
-        sensi_stats = (sensi_counts / len(data) * 100).rename(index=sensi_labels)
-        add_matplotlib_chart(doc, sensi_stats.head(5), "Top 5 des instructions citées (%)", "bar")
+    # Raison non-scan (raison_scan)
+    if 'raison_scan' in data.columns:
+        # On ne regarde que les ménages qui ont des moustiquaires non scannées
+        df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')]
+        if not df_non_scan.empty:
+            doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
+            raison_counts = df_non_scan['raison_scan'].str.split(', ').explode().value_counts()
+            total_non_scan = len(df_non_scan)
+            table_raison = [[v, c, f"{(c/total_non_scan*100):.1f}"] for v, c in raison_counts.items()]
+            create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
+
     
     # ========== INFORMATION CAMPAGNE ==========
     doc.add_heading('1.1 Information de la campagne de distribution', level=1)
