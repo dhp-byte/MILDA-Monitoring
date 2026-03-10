@@ -716,7 +716,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) else None)
 
     # Normalisation Oui/Non
-    yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information']
+    yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information', 'menage_chef', 'respondant_col', 'id_scan', 'sensibilise']
     for col in yes_no_cols:
         if col in data.columns:
             data[col] = data[col].apply(DataProcessor.normalize_yes_no)
