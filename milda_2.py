@@ -1489,7 +1489,7 @@ def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
     
     # 1. Barre latérale pour les filtres géographiques
-    st.sidebar.header("📍 Secteur de Recherche")
+    #st.sidebar.header("📍 Secteur de Recherche")
     
     df_track = data.copy()
     
@@ -1627,29 +1627,6 @@ def page_data_quality(data: pd.DataFrame):
     
     df_qc = data.copy()
 
-    # --- SECTION FILTRES ---
-    st.sidebar.header("📍 Filtres Géographiques")
-    
-    # Filtre Province
-    provinces = ["Toutes"] + sorted(df_qc['province'].dropna().unique().tolist())
-    sel_prov = st.sidebar.selectbox("Choisir une Province", provinces)
-    if sel_prov != "Toutes":
-        df_qc = df_qc[df_qc['province'] == sel_prov]
-
-    # Filtre Centre de Santé (dépend de la province)
-    cs_list = ["Tous"] + sorted(df_qc['centre_sante'].dropna().unique().tolist())
-    sel_cs = st.sidebar.selectbox("Choisir un Centre de Santé", cs_list)
-    if sel_cs != "Tous":
-        df_qc = df_qc[df_qc['centre_sante'] == sel_cs]
-
-    # Filtre Village (dépend du CS)
-    villages = ["Tous"] + sorted(df_qc['village'].dropna().unique().tolist())
-    sel_vill = st.sidebar.selectbox("Choisir un Village", villages)
-    if sel_vill != "Tous":
-        df_qc = df_qc[df_qc['village'] == sel_vill]
-
-    st.divider()
-    
     # Conversion forcée pour éviter AttributeError
     df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
     if 'heure_interview' in df_qc.columns:
