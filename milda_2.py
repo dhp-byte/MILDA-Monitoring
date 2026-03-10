@@ -2249,24 +2249,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     p = doc.add_paragraph()
     p.add_run('Ce rapport présente une analyse complète du dénombrement-distribution de la Campagne de Distribution de Masse des MILDA 2026.\n\n')
-    
-    # Points clés
-    p.add_run('Points clés :\n').bold = True
-    p.add_run(f'• Couverture globale : {pct_servis}%\n')
-    p.add_run(f'• Conformité : {pct_correct}%\n')
-    p.add_run(f'• Marquage : {pct_marques}%\n')
-    p.add_run(f'• Sensibilisation : {pct_informes}%\n\n')
-    
-    # Recommandations
-    p.add_run('Recommandations :\n').bold = True
-    if pct_servis < 80:
-        p.add_run('• Renforcer la couverture dans les zones sous-desservies\n')
-    if pct_correct < 80:
-        p.add_run('• Améliorer le respect des normes de distribution\n')
-    if pct_marques < 70:
-        p.add_run('• Intensifier le marquage systématique des ménages\n')
-    if pct_informes < 70:
-        p.add_run('• Renforcer les activités de sensibilisation\n')
 
     # Sauvegarder en mémoire
     output = io.BytesIO()
