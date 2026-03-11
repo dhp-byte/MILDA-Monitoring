@@ -1996,60 +1996,82 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
 
     doc.add_page_break()
     
-    doc.add_heading('Ménages servis en MILDA', level=2)
+    # 1. Identifier toutes les provinces uniques
+    if 'province' in data.columns:
+        provinces = sorted(data['province'].dropna().unique())
+    else:
+        st.error("La colonne 'province' est manquante.")
+        provinces = []
     
-    if 'centre_sante' in data.columns:
-        # Calcul du % de 'Oui' par CS
-        stats_servis = data.groupby('centre_sante')['indic_servi'].mean() * 100
-        add_matplotlib_chart(doc, stats_servis, 'Taux de couverture par Centre de Santé (%)', 'bar')
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-    #add_chart_placeholder(doc, 'Pourcentage des ménages servis en MILDA par Centre de Santé')
+    for prov in provinces:
+        # Filtrer les données pour la province actuelle
+        df_prov = data[data['province'] == prov].copy()
+        
+        # Titre de la section Province
+        doc.add_heading(f'Analyse : Province de {prov}', level=1)
+        doc.add_heading('Ménages servis en MILDA par Centre de Santé', level=2)
+        
+        if 'centre_sante' in df_prov.columns and not df_prov.empty:
+            # --- GRAPHIQUE PAR PROVINCE ---
+            # Calcul du % de 'Oui' par CS au sein de la province
+            stats_servis = df_prov.groupby('centre_sante')['indic_servi'].mean() * 100
+            
+            if not stats_servis.empty:
+                add_matplotlib_chart(doc, stats_servis, f'Couverture MILDA - {prov} (%)', 'bar')
+                doc.add_paragraph(f'Graphique : Taux de couverture par CS dans la province de {prov}.').italic = True
     
-    # Tableau par Centre de Santé
-    if 'centre_sante' in data.columns:
-        doc.add_heading('Tableau : Pourcentage des ménages servis par Centre de Santé', level=2)
-        
-        cs_stats = data.groupby('centre_sante').agg(
-            total=('centre_sante', 'count'),
-            servis=('indic_servi', 'sum'),
-            correct=('indic_correct', 'sum')
-        ).reset_index()
-        
-        cs_stats['pct_servis'] = round(100 * cs_stats['servis'] / cs_stats['total'], 1)
-        cs_stats['pct_correct'] = round(100 * cs_stats['correct'] / cs_stats['servis'], 1)
-        
-        table_data = []
-        for _, row in cs_stats.iterrows():
+            # --- TABLEAU PAR PROVINCE ---
+            doc.add_heading(f'Tableau : Synthèse des indicateurs - {prov}', level=3)
+            
+            cs_stats = df_prov.groupby('centre_sante').agg(
+                total=('centre_sante', 'count'),
+                servis=('indic_servi', 'sum'),
+                correct=('indic_correct', 'sum')
+            ).reset_index()
+            
+            # Calcul des pourcentages
+            cs_stats['pct_servis'] = round(100 * cs_stats['servis'] / cs_stats['total'], 1)
+            # Gestion du cas où servis = 0 pour éviter division par zéro
+            cs_stats['pct_correct'] = round(100 * cs_stats['correct'].div(cs_stats['servis'].replace(0, pd.NA)), 1).fillna(0)
+            
+            table_data = []
+            for _, row in cs_stats.iterrows():
+                table_data.append([
+                    str(row['centre_sante']),
+                    int(row['total']),
+                    int(row['servis']),
+                    f"{row['pct_servis']}%",
+                    int(row['correct']),
+                    f"{row['pct_correct']}%"
+                ])
+            
+            # Ligne de Total pour la Province
+            t_total = cs_stats['total'].sum()
+            t_servis = cs_stats['servis'].sum()
+            t_correct = cs_stats['correct'].sum()
+            
             table_data.append([
-                row['centre_sante'],
-                row['total'],
-                row['servis'],
-                row['pct_servis'],
-                row['correct'],
-                row['pct_correct']
+                'TOTAL PROVINCE',
+                t_total,
+                t_servis,
+                f"{round(100 * t_servis / t_total, 1)}%" if t_total > 0 else "0%",
+                t_correct,
+                f"{round(100 * t_correct / t_servis, 1)}%" if t_servis > 0 else "0%"
+            ])
+            
+            # Création du tableau dans Word
+            create_table(doc, table_data, [
+                'Centre de Santé',
+                'Ménages dénombrés',
+                'Ménages servis',
+                '% servis',
+                'Correctement servis',
+                '% correct'
             ])
         
-        # Total
-        table_data.append([
-            'Total',
-            cs_stats['total'].sum(),
-            cs_stats['servis'].sum(),
-            round(100 * cs_stats['servis'].sum() / cs_stats['total'].sum(), 1),
-            cs_stats['correct'].sum(),
-            round(100 * cs_stats['correct'].sum() / cs_stats['servis'].sum(), 1)
-        ])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
         
-        create_table(doc, table_data, [
-            'CS',
-            'Ménages dénombrés',
-            'Ménages servis',
-            '% servis',
-            'Correctement servis',
-            '% correct'
-        ])
-    
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-    
+        # Saut de page après chaque province (optionnel)
     doc.add_page_break()
     
     # ========== ANALYSE DE LA DISTRIBUTION ==========
