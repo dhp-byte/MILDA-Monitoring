@@ -2102,8 +2102,24 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         create_table(doc, table_data, table_headers)
         
         doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
+        # --- AJOUT DU GRAPHIQUE DE COMPARAISON ---
+        doc.add_heading('Comparaison visuelle de la couverture par Province (%)', level=2)
+        
+        # On prépare les données pour le graphique
+        # On utilise les noms de provinces et les taux de couverture calculés précédemment
+        series_couverture = prov_stats.set_index('province')['% Couverture']
+        
+        # Appel de votre fonction de graphique (en mode 'bar' vertical)
+        # Note : Assurez-vous que votre fonction add_matplotlib_chart gère bien les index
+        add_matplotlib_chart(
+            doc, 
+            series_couverture, 
+            'Taux de Couverture MILDA (%)', 
+            'bar'
+        )
+        
+        doc.add_paragraph("Figure 1 : Classement des provinces par taux de couverture décroissant.").italic = True
 
-# APPEL DANS VOTRE SCRIPT :
     #add_executive_summary(doc, data)
     add_provincial_dashboard(doc, data)
     
