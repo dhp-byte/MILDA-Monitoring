@@ -2072,7 +2072,71 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
         
         # Saut de page après chaque province (optionnel)
-    doc.add_page_break()
+        doc.add_page_break()
+
+        # On suppose que cette partie se trouve à l'intérieur de la boucle : for prov in provinces:
+        # df_prov est déjà filtré pour la province en cours
+        
+        doc.add_heading(f'Analyse du marquage des ménages - {prov}', level=2)
+        
+        if 'centre_sante' in df_prov.columns and not df_prov.empty:
+            # 1. GRAPHIQUE DE MARQUAGE (Seulement pour les ménages servis)
+            # On filtre pour ne prendre que les ménages servis dans cette province
+            df_servis_prov = df_prov[df_prov['indic_servi'] == 1]
+            
+            if not df_servis_prov.empty:
+                stats_marquage = df_servis_prov.groupby('centre_sante')['indic_marque'].mean() * 100
+                
+                if not stats_marquage.empty:
+                    add_matplotlib_chart(doc, stats_marquage, f'Taux de marquage des ménages servis - {prov} (%)', 'bar')
+                    doc.add_paragraph(f'Graphique : Proportion des ménages servis ayant reçu un marquage (Province : {prov}).').italic = True
+        
+            # 2. TABLEAU DÉTAILLÉ DU MARQUAGE
+            doc.add_heading(f'Tableau : Statut du marquage par CS - {prov}', level=3)
+            
+            # Note : Utilisation de 'indic_servi' == 1 pour la cohérence avec vos indicateurs numériques
+            marquage_stats = df_prov[df_prov['indic_servi'] == 1].groupby('centre_sante').agg(
+                servis=('indic_servi', 'count'),
+                marques=('indic_marque', 'sum')
+            ).reset_index()
+            
+            if not marquage_stats.empty:
+                # Calcul du pourcentage par ligne
+                marquage_stats['pct_marques'] = round(100 * marquage_stats['marques'] / marquage_stats['servis'], 1)
+                
+                table_data_marquage = []
+                for _, row in marquage_stats.iterrows():
+                    table_data_marquage.append([
+                        str(row['centre_sante']),
+                        int(row['servis']),
+                        int(row['marques']),
+                        f"{row['pct_marques']}%"
+                    ])
+                
+                # Ligne de Total Province pour le marquage
+                total_servis = marquage_stats['servis'].sum()
+                total_marques = marquage_stats['marques'].sum()
+                pct_total_marques = round(100 * total_marques / total_servis, 1) if total_servis > 0 else 0
+                
+                table_data_marquage.append([
+                    'TOTAL PROVINCE',
+                    total_servis,
+                    total_marques,
+                    f"{pct_total_marques}%"
+                ])
+                
+                # Création du tableau Word
+                create_table(doc, table_data_marquage, [
+                    'Centre de Santé',
+                    'Ménages servis',
+                    'Ménages marqués',
+                    '% marqués'
+                ])
+            else:
+                doc.add_paragraph("Aucune donnée de marquage disponible (aucun ménage servi dans cette province).")
+        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+        doc.add_page_break()
     
     # ========== ANALYSE DE LA DISTRIBUTION ==========
     doc.add_heading('Analyse de la distribution des moustiquaires', level=1)
