@@ -1546,8 +1546,60 @@ def page_agent_tracking(data: pd.DataFrame):
 
     # [Code de la carte px.line_mapbox ici...]
     # (Je passe la partie carte pour me concentrer sur vos nouveaux tableaux)
-    st.plotly_chart(px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=12, height=500, mapbox_style="open-street-map"), use_container_width=True)
+    # 3.2 CONSTRUCTION DE LA CARTE DÉTAILLÉE
+    if not agent_path.empty:
+        # Création de la ligne de base
+        fig = px.line_mapbox(
+            agent_path,
+            lat="latitude",
+            lon="longitude",
+            zoom=15 if "Satellite" in choix_carte else 12,
+            height=600
+        )
+        
+        # AJOUT DES POINTS AVEC L'HEURE (Libellé noir)
+        fig.add_trace(go.Scattermapbox(
+            lat=agent_path['latitude'],
+            lon=agent_path['longitude'],
+            mode='markers+text',
+            marker=go.scattermapbox.Marker(size=12, color='red'), # Point rouge
+            text=agent_path['heure_texte'],                      # L'heure s'affiche ici
+            textposition="top right",
+            textfont=dict(size=13, color="black"),               # Texte en noir
+            name="Ménage visité"
+        ))
 
+        # AJOUT DES PETITS POINTS DE DIRECTION (Points noirs)
+        fig.add_trace(go.Scattermapbox(
+            lat=agent_path['latitude'],
+            lon=agent_path['longitude'],
+            mode='markers',
+            marker=go.scattermapbox.Marker(size=6, color='black'),
+            hoverinfo='skip',
+            showlegend=False
+        ))
+
+        # APPLICATION DU STYLE DE CARTE
+        if choix_carte == "Satellite (Détaillé)":
+            fig.update_layout(
+                mapbox_style="white-bg",
+                mapbox_layers=[{
+                    "sourcetype": "raster",
+                    "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
+                }]
+            )
+        else:
+            styles = {
+                "Clair (Rapport)": "carto-positron",
+                "Sombre": "carto-darkmatter",
+                "Rues": "open-street-map"
+            }
+            fig.update_layout(mapbox_style=styles.get(choix_carte, "open-street-map"))
+
+        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=True)
+        
+        # Affichage final
+        st.plotly_chart(fig, use_container_width=True)
     # 4. STATISTIQUES DESCRIPTIVES SUR LA DURÉE (Pour l'agent sélectionné)
     st.markdown("### 📊 Statistiques de durée d'interview")
     
