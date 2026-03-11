@@ -2048,7 +2048,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_page_break()
 
     def add_provincial_dashboard(doc, data):
-        doc.add_heading('TABLEAU DE BORD NATIONAL PAR PROVINCE', level=1)
+        doc.add_heading('PRINCIPAUX INDICATEURS PAR PROVINCE', level=1)
         doc.add_paragraph("Ce tableau compare la performance globale de chaque province pour l'ensemble des indicateurs clés de la CDM-2026.")
     
         # 1. Agrégation des données par Province
@@ -2107,7 +2107,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_page_break()
 
 # APPEL DANS VOTRE SCRIPT :
-    add_executive_summary(doc, data)
+    #add_executive_summary(doc, data)
     add_provincial_dashboard(doc, data)
     
     # 1. Identifier toutes les provinces uniques
