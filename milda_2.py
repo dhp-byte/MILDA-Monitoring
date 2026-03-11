@@ -2045,8 +2045,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         else:
             doc.add_paragraph("Qualité technique : Le marquage est conforme aux attentes dans toutes les zones.")
 
-    doc.add_page_break()
-
     def add_provincial_dashboard(doc, data):
         doc.add_heading('PRINCIPAUX INDICATEURS PAR PROVINCE', level=1)
         doc.add_paragraph("Ce tableau compare la performance globale de chaque province pour l'ensemble des indicateurs clés de la CDM-2026.")
@@ -2104,7 +2102,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         create_table(doc, table_data, table_headers)
         
         doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
-    doc.add_page_break()
 
 # APPEL DANS VOTRE SCRIPT :
     #add_executive_summary(doc, data)
