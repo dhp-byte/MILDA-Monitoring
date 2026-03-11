@@ -1995,114 +1995,115 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
     doc.add_page_break()
+            
     def add_executive_summary(doc, data):
-    doc.add_heading('RÉSUMÉ EXÉCUTIF : ALERTES DE PERFORMANCE', level=1)
+        doc.add_heading('RÉSUMÉ EXÉCUTIF : ALERTES DE PERFORMANCE', level=1)
+        
+        # 1. Calcul des indicateurs par Centre de Santé (National)
+        cs_performance = data.groupby(['province', 'centre_sante']).agg(
+            total=('indic_servi', 'count'),
+            servis=('indic_servi', 'sum'),
+            marques=('indic_marque', 'sum')
+        ).reset_index()
     
-    # 1. Calcul des indicateurs par Centre de Santé (National)
-    cs_performance = data.groupby(['province', 'centre_sante']).agg(
-        total=('indic_servi', 'count'),
-        servis=('indic_servi', 'sum'),
-        marques=('indic_marque', 'sum')
-    ).reset_index()
-
-    cs_performance['taux_couverture'] = (cs_performance['servis'] / cs_performance['total']) * 100
-    cs_performance['taux_marquage'] = (cs_performance['marques'] / cs_performance['servis']) * 100
-
-    # 2. Identification des zones critiques (Seuil < 80%)
-    alerte_couverture = cs_performance[cs_performance['taux_couverture'] < 80].sort_values('taux_couverture')
-    alerte_marquage = cs_performance[cs_performance['taux_marquage'] < 80].sort_values('taux_marquage')
-
-    # --- SECTION : ALERTES COUVERTURE ---
-    doc.add_heading('🚨 Zones à faible taux de couverture (< 80%)', level=2)
-    if not alerte_couverture.empty:
-        p = doc.add_paragraph(f"Les {len(alerte_couverture)} centres de santé suivants présentent une couverture insuffisante. Une vérification logistique ou une supervision de proximité est recommandée.")
-        
-        table_alert = [['Province', 'Centre de Santé', 'Taux Couverture']]
-        for _, row in alerte_couverture.head(10).iterrows(): # Top 10 des plus critiques
-            table_alert.append([
-                row['province'],
-                row['centre_sante'],
-                f"{row['taux_couverture']:.1f}%"
-            ])
-        create_table(doc, table_alert, table_alert[0]) # Utilise votre fonction create_table
-    else:
-        doc.add_paragraph("Félicitations : Tous les centres de santé dépassent 80% de couverture.")
-
-    # --- SECTION : ALERTES MARQUAGE ---
-    doc.add_heading('Zones à faible taux de marquage (< 80%)', level=2)
-    if not alerte_marquage.empty:
-        doc.add_paragraph("Le marquage des ménages est essentiel pour le suivi. Les zones suivantes sont en dessous des standards de qualité :")
-        
-        table_m = [['Province', 'Centre de Santé', 'Taux Marquage']]
-        for _, row in alerte_marquage.head(10).iterrows():
-            table_m.append([
-                row['province'],
-                row['centre_sante'],
-                f"{row['taux_marquage']:.1f}%"
-            ])
-        create_table(doc, table_m, table_m[0])
-    else:
-        doc.add_paragraph("Qualité technique : Le marquage est conforme aux attentes dans toutes les zones.")
+        cs_performance['taux_couverture'] = (cs_performance['servis'] / cs_performance['total']) * 100
+        cs_performance['taux_marquage'] = (cs_performance['marques'] / cs_performance['servis']) * 100
+    
+        # 2. Identification des zones critiques (Seuil < 80%)
+        alerte_couverture = cs_performance[cs_performance['taux_couverture'] < 80].sort_values('taux_couverture')
+        alerte_marquage = cs_performance[cs_performance['taux_marquage'] < 80].sort_values('taux_marquage')
+    
+        # --- SECTION : ALERTES COUVERTURE ---
+        doc.add_heading('🚨 Zones à faible taux de couverture (< 80%)', level=2)
+        if not alerte_couverture.empty:
+            p = doc.add_paragraph(f"Les {len(alerte_couverture)} centres de santé suivants présentent une couverture insuffisante. Une vérification logistique ou une supervision de proximité est recommandée.")
+            
+            table_alert = [['Province', 'Centre de Santé', 'Taux Couverture']]
+            for _, row in alerte_couverture.head(10).iterrows(): # Top 10 des plus critiques
+                table_alert.append([
+                    row['province'],
+                    row['centre_sante'],
+                    f"{row['taux_couverture']:.1f}%"
+                ])
+            create_table(doc, table_alert, table_alert[0]) # Utilise votre fonction create_table
+        else:
+            doc.add_paragraph("Félicitations : Tous les centres de santé dépassent 80% de couverture.")
+    
+        # --- SECTION : ALERTES MARQUAGE ---
+        doc.add_heading('Zones à faible taux de marquage (< 80%)', level=2)
+        if not alerte_marquage.empty:
+            doc.add_paragraph("Le marquage des ménages est essentiel pour le suivi. Les zones suivantes sont en dessous des standards de qualité :")
+            
+            table_m = [['Province', 'Centre de Santé', 'Taux Marquage']]
+            for _, row in alerte_marquage.head(10).iterrows():
+                table_m.append([
+                    row['province'],
+                    row['centre_sante'],
+                    f"{row['taux_marquage']:.1f}%"
+                ])
+            create_table(doc, table_m, table_m[0])
+        else:
+            doc.add_paragraph("Qualité technique : Le marquage est conforme aux attentes dans toutes les zones.")
 
     doc.add_page_break()
 
     def add_provincial_dashboard(doc, data):
-    doc.add_heading('TABLEAU DE BORD NATIONAL PAR PROVINCE', level=1)
-    doc.add_paragraph("Ce tableau compare la performance globale de chaque province pour l'ensemble des indicateurs clés de la CDM-2026.")
-
-    # 1. Agrégation des données par Province
-    prov_stats = data.groupby('province').agg(
-        nb_menages=('indic_servi', 'count'),
-        servis=('indic_servi', 'sum'),
-        marques=('indic_marque', 'sum'),
-        corrects=('indic_correct', 'sum')
-    ).reset_index()
-
-    # 2. Calcul des indicateurs de performance
-    prov_stats['% Couverture'] = (prov_stats['servis'] / prov_stats['nb_menages'] * 100).round(1)
-    prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'] * 100).round(1)
-    prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'] * 100).round(1)
-
-    # Tri par performance de couverture (du meilleur au moins bon)
-    prov_stats = prov_stats.sort_values('% Couverture', ascending=False)
-
-    # 3. Préparation des données pour le tableau Word
-    table_headers = [
-        'Province', 
-        'Ménages Dénombrés', 
-        '% Couverture', 
-        '% Marquage', 
-        '% Qualité'
-    ]
+        doc.add_heading('TABLEAU DE BORD NATIONAL PAR PROVINCE', level=1)
+        doc.add_paragraph("Ce tableau compare la performance globale de chaque province pour l'ensemble des indicateurs clés de la CDM-2026.")
     
-    table_data = []
-    for _, row in prov_stats.iterrows():
+        # 1. Agrégation des données par Province
+        prov_stats = data.groupby('province').agg(
+            nb_menages=('indic_servi', 'count'),
+            servis=('indic_servi', 'sum'),
+            marques=('indic_marque', 'sum'),
+            corrects=('indic_correct', 'sum')
+        ).reset_index()
+    
+        # 2. Calcul des indicateurs de performance
+        prov_stats['% Couverture'] = (prov_stats['servis'] / prov_stats['nb_menages'] * 100).round(1)
+        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'] * 100).round(1)
+        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'] * 100).round(1)
+    
+        # Tri par performance de couverture (du meilleur au moins bon)
+        prov_stats = prov_stats.sort_values('% Couverture', ascending=False)
+    
+        # 3. Préparation des données pour le tableau Word
+        table_headers = [
+            'Province', 
+            'Ménages Dénombrés', 
+            '% Couverture', 
+            '% Marquage', 
+            '% Qualité'
+        ]
+        
+        table_data = []
+        for _, row in prov_stats.iterrows():
+            table_data.append([
+                str(row['province']),
+                f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage des milliers
+                f"{row['% Couverture']}%",
+                f"{row['% Marquage']}%",
+                f"{row['% Qualité (Correct)']}%"
+            ])
+    
+        # 4. Ajout d'une ligne de TOTAL NATIONAL
+        total_n = prov_stats['nb_menages'].sum()
+        total_s = prov_stats['servis'].sum()
+        total_m = prov_stats['marques'].sum()
+        total_c = prov_stats['corrects'].sum()
+    
         table_data.append([
-            str(row['province']),
-            f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage des milliers
-            f"{row['% Couverture']}%",
-            f"{row['% Marquage']}%",
-            f"{row['% Qualité (Correct)']}%"
+            'TOTAL NATIONAL',
+            f"{int(total_n):,}".replace(',', ' '),
+            f"{round(100 * total_s / total_n, 1)}%" if total_n > 0 else "0%",
+            f"{round(100 * total_m / total_s, 1)}%" if total_s > 0 else "0%",
+            f"{round(100 * total_c / total_s, 1)}%" if total_s > 0 else "0%"
         ])
-
-    # 4. Ajout d'une ligne de TOTAL NATIONAL
-    total_n = prov_stats['nb_menages'].sum()
-    total_s = prov_stats['servis'].sum()
-    total_m = prov_stats['marques'].sum()
-    total_c = prov_stats['corrects'].sum()
-
-    table_data.append([
-        'TOTAL NATIONAL',
-        f"{int(total_n):,}".replace(',', ' '),
-        f"{round(100 * total_s / total_n, 1)}%" if total_n > 0 else "0%",
-        f"{round(100 * total_m / total_s, 1)}%" if total_s > 0 else "0%",
-        f"{round(100 * total_c / total_s, 1)}%" if total_s > 0 else "0%"
-    ])
-
-    # 5. Création du tableau
-    create_table(doc, table_data, table_headers)
     
-    doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
+        # 5. Création du tableau
+        create_table(doc, table_data, table_headers)
+        
+        doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
     doc.add_page_break()
 
 # APPEL DANS VOTRE SCRIPT :
