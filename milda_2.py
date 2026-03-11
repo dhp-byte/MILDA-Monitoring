@@ -2175,51 +2175,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     doc.add_page_break()
     
-    # ========== MARQUAGE DES MÉNAGES ==========
-    doc.add_heading('Marquage des ménages', level=1)
-    
-    if 'centre_sante' in data.columns:
-        # Taux de marquage parmi les ménages servis
-        stats_marquage = data[data['indic_servi']==1].groupby('centre_sante')['indic_marque'].mean() * 100
-        add_matplotlib_chart(doc, stats_marquage, 'Taux de marquage des ménages servis (%)', 'bar')
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-    #add_chart_placeholder(doc, 'Pourcentage de ménages avec marquage par CS')
-    
-    if 'centre_sante' in data.columns:
-        marquage_stats = data[data['menage_servi'] == 'Oui'].groupby('centre_sante').agg(
-            servis=('menage_servi', 'count'),
-            marques=('indic_marque', 'sum')
-        ).reset_index()
-        
-        marquage_stats['pct_marques'] = round(100 * marquage_stats['marques'] / marquage_stats['servis'], 1)
-        
-        table_data = []
-        for _, row in marquage_stats.iterrows():
-            table_data.append([
-                row['centre_sante'],
-                row['servis'],
-                row['marques'],
-                row['pct_marques']
-            ])
-        
-        table_data.append([
-            'Total',
-            marquage_stats['servis'].sum(),
-            marquage_stats['marques'].sum(),
-            round(100 * marquage_stats['marques'].sum() / marquage_stats['servis'].sum(), 1)
-        ])
-        
-        create_table(doc, table_data, [
-            'CS',
-            'Ménages servis',
-            'Ménages marqués',
-            '% marqués'
-        ])
-        
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-    
-    doc.add_page_break()
-    
     # ========== SENSIBILISATION ==========
     doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
     
