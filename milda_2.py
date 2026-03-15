@@ -805,7 +805,7 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
             'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
-            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
+            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21', '${agent_name},Ce ménage a-t-il été servi conformément à la norme de la CDM 2026?'],
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
