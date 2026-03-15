@@ -173,16 +173,16 @@ class DataProcessor:
             value = value[0] if len(value) > 0 else np.nan
             
         if pd.isna(value) or value == "":
-            #return "Non"
-            return 0
+            return "Non"
+            #return 0
         
         val_str = str(value).lower().strip()
         # Votre nouveau formulaire utilise 'yes'/'no' en interne
         if val_str in ['oui', 'yes', '1', 'true']:
-            #return "Oui"
-            return 1
-        #return "Non"
-        return 0
+            return "Oui"
+            #return 1
+        return "Non"
+        #return 0
     
     @staticmethod
     def calculate_expected_milda(n_persons: float) -> int:
@@ -717,10 +717,12 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) else None)
 
     # Normalisation Oui/Non
-    yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information', 'menage_chef', 'respondant_col', 'id_scan', 'sensibilise']
-    for col in yes_no_cols:
+    # Dans process_milda_dataframe
+    cols_to_fix = ['menage_servi', 'menage_marque', 'norme', 'information']
+    for col in cols_to_fix:
         if col in data.columns:
-            data[col] = data[col].apply(DataProcessor.normalize_yes_no)
+            # On s'assure de ne traiter que des valeurs simples
+            data[col] = data[col].astype(str).apply(DataProcessor.normalize_yes_no)
 
     # Conversions numériques et indicateurs
     for col in ['nb_personnes', 'nb_milda_recues']:
