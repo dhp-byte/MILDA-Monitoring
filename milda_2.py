@@ -731,12 +731,12 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     
     # Indicateurs binaires pour le Dashboard
     # Remplacez les lignes 207-210 par :
-    data['indic_servi'] = (data.get('menage_servi', pd.Series()).astype(str) == 'yes').astype(int)
-    data['indic_marque'] = (data.get('menage_marque', pd.Series()).astype(str) == 'yes').astype(int)
-    data['indic_correct'] = ((data['indic_servi'] == 1) & (data.get('norme', pd.Series()).astype(str) == 'yes')).astype(int)
-    #data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
+    
+    # APRÈS (corrigé)
+    norme_ok = (data['norme'] == 'Oui') if 'norme' in data.columns else pd.Series(False, index=data.index)
+    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & norme_ok).astype(int)
     #data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
-    #data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
+    data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
     data['indic_info'] = (data['information'] == 'Oui').astype(int)
 
     if 'date_enquete' in data.columns:
@@ -2567,14 +2567,19 @@ def process_raw_kobo_data(df):
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
     # Calcul des indicateurs attendus par votre Dashboard 
+    
     if 'nb_personnes' in df.columns:
         df['nb_milda_attendues'] = df['nb_personnes'].apply(DataProcessor.calculate_expected_milda)
     
     # GÉNÉRATION DES COLONNES MANQUANTES (Cause de la KeyError)
-    df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int)
-    df['indic_correct'] = (df.get('norme') == 'Oui').astype(int)
-    df['indic_marque'] = (df.get('menage_marque') == 'Oui').astype(int)
-    df['indic_info'] = (df.get('information') == 'Oui').astype(int)
+    df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int) if 'menage_servi' in df.columns else 0
+    df['indic_correct'] = (df['norme'] == 'Oui').astype(int) if 'norme' in df.columns else 0
+    df['indic_marque'] = (df['menage_marque'] == 'Oui').astype(int) if 'menage_marque' in df.columns else 0
+    df['indic_info'] = (df['information'] == 'Oui').astype(int) if 'information' in df.columns else 0
+    #df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int)
+    #df['indic_correct'] = (df.get('norme') == 'Oui').astype(int)
+    #df['indic_marque'] = (df.get('menage_marque') == 'Oui').astype(int)
+    #df['indic_info'] = (df.get('information') == 'Oui').astype(int)
     
     # Calcul des écarts pour la page analyse
     if 'nb_milda_attendues' in df.columns and 'nb_milda_recues' in df.columns:
