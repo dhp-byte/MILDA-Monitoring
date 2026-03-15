@@ -736,10 +736,16 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     # Remplacez les lignes 207-210 par :
     
     # APRÈS (corrigé)
-    norme_ok = (data['norme'] == 'Oui') if 'norme' in data.columns else pd.Series(False, index=data.index)
-    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & norme_ok).astype(int)
+    # Forcez la création des colonnes indicateurs même si les données sont brutes
+    # Note : on compare avec 'yes' car c'est la valeur interne de votre nouveau formulaire
+    data['indic_servi'] = (data.get('menage_servi', pd.Series()).astype(str).str.lower() == 'yes').astype(int)
+    data['indic_marque'] = (data.get('menage_marque', pd.Series()).astype(str).str.lower() == 'yes').astype(int)
+    
+    # Calcul du "Correctement servi" (Servi + Norme respectée)
+    norme_ok = (data.get('norme', pd.Series()).astype(str).str.lower() == 'yes')
+    data['indic_correct'] = ((data['indic_servi'] == 1) & norme_ok).astype(int)
     #data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
-    data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
+    #data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
     data['indic_info'] = (data['information'] == 'Oui').astype(int)
 
     if 'date_enquete' in data.columns:
