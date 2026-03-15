@@ -634,7 +634,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
             'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
-            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
+            'agent_name': ['enqueteur', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
             'village': ['village', 'Village/Avenue/Quartier', 'S0Q08'],
             'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'gr_1/S1Q2'],
             'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
