@@ -730,9 +730,13 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     data['ecart_distribution'] = data['nb_milda_recues'] - data['nb_milda_attendues']
     
     # Indicateurs binaires pour le Dashboard
-    data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
-    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
-    data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
+    # Remplacez les lignes 207-210 par :
+    data['indic_servi'] = (data.get('menage_servi', pd.Series()).astype(str) == 'yes').astype(int)
+    data['indic_marque'] = (data.get('menage_marque', pd.Series()).astype(str) == 'yes').astype(int)
+    data['indic_correct'] = ((data['indic_servi'] == 1) & (data.get('norme', pd.Series()).astype(str) == 'yes')).astype(int)
+    #data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
+    #data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
+    #data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
     data['indic_info'] = (data['information'] == 'Oui').astype(int)
 
     if 'date_enquete' in data.columns:
