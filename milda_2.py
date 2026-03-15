@@ -674,6 +674,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'district': 'district',
             'centre_sante': 'cs',
             'village': 'village',
+            'agent_name' : 'agent_name',
             'sexe': 'sexe',
             'activ_rev': 'activ_rev',
             'raison': 'raison',          # Choix multiples possibles
