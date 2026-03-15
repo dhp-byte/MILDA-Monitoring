@@ -167,20 +167,19 @@ class DataProcessor:
     """Classe pour le traitement avancé des données"""
     
     @staticmethod
-    def normalize_yes_no(value) -> Optional[str]:
-        """Normalise les réponses Oui/Non avec gestion robuste"""
-        if pd.isna(value):
-            return None
+    def normalize_yes_no(value):
+        # Sécurité : si on reçoit un objet complexe (Series/List), on prend le premier élément ou on convertit
+        if isinstance(value, (list, np.ndarray)):
+            value = value[0] if len(value) > 0 else np.nan
+            
+        if pd.isna(value) or value == "":
+            return "Non"
         
-        value_str = str(value).strip().lower()
-        yes_values = ['oui', 'yes', 'y', '1', 'true', 'o']
-        no_values = ['non', 'no', 'n', '0', 'false']
-        
-        if value_str in yes_values:
-            return 'Oui'
-        elif value_str in no_values:
-            return 'Non'
-        return None
+        val_str = str(value).lower().strip()
+        # Votre nouveau formulaire utilise 'yes'/'no' en interne
+        if val_str in ['oui', 'yes', '1', 'true']:
+            return "Oui"
+        return "Non"
     
     @staticmethod
     def calculate_expected_milda(n_persons: float) -> int:
