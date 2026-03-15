@@ -685,13 +685,13 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
 
         for col, list_name in config.items():
             if col in data.columns:
-                # Nettoyage de base (String, suppression du .0, suppression des espaces)
+                # Nettoyage de base — CORRECTION : utiliser str.replace() et pas .replace()
                 data[col] = (
                     data[col]
                     .astype(str)
                     .str.replace(r'\.0$', '', regex=True)
                     .str.strip()
-                    .replace('nan', '') # On évite d'afficher "nan"
+                    .str.replace(r'^nan$', '', regex=True)  # ← CORRIGÉ : str.replace() au lieu de .replace()
                 )
                 
                 if list_name in mappings:
@@ -699,7 +699,6 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                         # --- LOGIQUE POUR CHOIX MULTIPLES ---
                         def decode_multi(val, mapping_dict):
                             if not val or val == '': return val
-                            # On sépare par l'espace (standard KoBo), on traduit, on rejoint par virgule
                             codes = str(val).split()
                             labels = [mapping_dict.get(c, c) for c in codes]
                             return ", ".join(labels)
