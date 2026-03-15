@@ -173,13 +173,16 @@ class DataProcessor:
             value = value[0] if len(value) > 0 else np.nan
             
         if pd.isna(value) or value == "":
-            return "Non"
+            #return "Non"
+            return 0
         
         val_str = str(value).lower().strip()
         # Votre nouveau formulaire utilise 'yes'/'no' en interne
         if val_str in ['oui', 'yes', '1', 'true']:
-            return "Oui"
-        return "Non"
+            #return "Oui"
+            return 1
+        #return "Non"
+        return 0
     
     @staticmethod
     def calculate_expected_milda(n_persons: float) -> int:
