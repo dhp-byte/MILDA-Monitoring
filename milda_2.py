@@ -2638,9 +2638,11 @@ def main():
                 st.session_state.kobo_token = token
                 st.success("✅ Connexion réussie !")
 
+    # --- 3. LOGIQUE D'EXTRACTION KOBO (PAGINATION ACTIVE) ---
     if st.session_state.kobo_token:
         headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
         try:
+            # 3.1 Récupération de la liste des formulaires
             assets_url = f"{server_base}/api/v2/assets.json"
             res_assets = requests.get(assets_url, headers=headers)
             
@@ -2651,33 +2653,47 @@ def main():
                 selected_form = st.selectbox("Choisir le formulaire KoBo :", ["-- Sélectionner --"] + list(forms.keys()))
                 
                 if selected_form != "-- Sélectionner --":
-                    if st.button("📥 Charger les données KoBo"):
-                        with st.spinner('Extraction et calcul des indicateurs...'):
+                    if st.button("📥 Charger la base complète (10 000+ enregistrements)"):
+                        with st.spinner('Extraction en cours... (Patientez pendant la récupération des pages)'):
                             uid = forms[selected_form]
-                            data_url = f"{server_base}/api/v2/assets/{uid}/data.json?limit=3000000"
-                            #data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
-                            res_data = requests.get(data_url, headers=headers)
+                            all_results = []
+                            # On commence par la première page avec une taille de 1000 par défaut
+                            next_url = f"{server_base}/api/v2/assets/{uid}/data.json?page_size=1000"
                             
-                            if res_data.status_code == 200:
-                                results = res_data.json().get('results', [])
-                                if results:
-                                    df_raw = pd.DataFrame(results)
+                            # Boucle de pagination
+                            while next_url:
+                                res_data = requests.get(next_url, headers=headers)
+                                if res_data.status_code == 200:
+                                    payload = res_data.json()
+                                    batch = payload.get('results', [])
+                                    all_results.extend(batch)
                                     
-                                    # Traitement universel (Mapping + Indicateurs + Nettoyage)
-                                    # Note: Cette fonction doit contenir la logique de mapping S1Q17 -> menage_servi
-                                    data, stats = process_milda_dataframe(df_raw) 
-
-                                    st.write(data[['province', 'centre_sante']].head())
-                                    st.session_state.data = data
-                                    st.session_state.tables = generate_analysis_tables(data)
-                                    st.success(f"✅ {len(data)} enregistrements chargés !")
-                                    st.rerun()
+                                    # Récupération de l'URL de la page suivante fournie par KoBo
+                                    next_url = payload.get('next')
+                                    
+                                    # Optionnel : Afficher la progression
+                                    # st.write(f"Chargement... {len(all_results)} lignes récupérées")
                                 else:
-                                    st.warning("Le formulaire sélectionné est vide.")
+                                    st.error(f"Erreur lors de la pagination : {res_data.status_code}")
+                                    break
+                            
+                            if all_results:
+                                df_raw = pd.DataFrame(all_results)
+                                
+                                # Traitement universel (Mapping S1Q... + Indicateurs + Nettoyage)
+                                # Assurez-vous que process_milda_dataframe est à jour avec les codes S1Q
+                                data, stats = process_milda_dataframe(df_raw) 
+
+                                st.session_state.data = data
+                                st.session_state.tables = generate_analysis_tables(data)
+                                st.success(f"✅ {len(data)} enregistrements chargés avec succès !")
+                                st.rerun()
+                            else:
+                                st.warning("Le formulaire sélectionné ne contient aucune donnée.")
             else:
-                st.error("Erreur lors de la récupération de la liste des projets.")
+                st.error("Impossible de récupérer la liste des projets. Vérifiez vos identifiants.")
         except Exception as e:
-            st.error(f"Erreur KoBo : {e}")
+            st.error(f"Erreur technique KoBo : {e}")
 
     # --- 4. LOGIQUE IMPORT EXCEL ---
     if uploaded_file and st.session_state.data is None:
