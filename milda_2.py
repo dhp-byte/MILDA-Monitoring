@@ -2105,10 +2105,15 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                 correct=('indic_correct', 'sum')
             ).reset_index()
             
-            # Calcul des pourcentages
-            cs_stats['pct_servis'] = round(100 * cs_stats['servis'] / cs_stats['total'], 1)
-            # Gestion du cas où servis = 0 pour éviter division par zéro
-            cs_stats['pct_correct'] = round(100 * cs_stats['correct'].div(cs_stats['servis'].replace(0, pd.NA)), 1).fillna(0)
+            # Calcul des pourcentages sécurisé
+            cs_stats['pct_servis'] = (100 * cs_stats['servis'] / cs_stats['total']).astype(float).round(1)
+            
+            # Correction du bug ici : 
+            # 1. On remplace les 0 par NaN pour éviter la division par zéro
+            # 2. On force le type en float pour que round() fonctionne
+            # 3. On remplit les vides par 0 à la fin
+            cs_stats['pct_correct'] = (100 * cs_stats['correct'] / cs_stats['servis'].replace(0, np.nan))
+            cs_stats['pct_correct'] = cs_stats['pct_correct'].astype(float).round(1).fillna(0)
             
             table_data = []
             for _, row in cs_stats.iterrows():
