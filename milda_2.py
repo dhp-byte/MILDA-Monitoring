@@ -1550,25 +1550,29 @@ def page_agent_tracking(data: pd.DataFrame):
     else:
         df_track['Duree_min'] = np.nan
 
-    # Nettoyage et création du timestamp sécurisé
+    # --- FIX DÉFINITIF POUR L'ERREUR .dt ---
+    # 1. On crée une copie propre et on s'assure que les colonnes nécessaires existent
     df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
     
-    # On s'assure que les composants sont du texte pour la concaténation
-    dates_str = df_map['date_enquete'].dt.date.astype(str)
-    heures_str = df_map['heure_interview'].astype(str)
+    # 2. Conversion forcée en chaînes de caractères pour éviter les conflits de types
+    # S0Q01 est la date, heure_interview (ou end) est l'heure
+    dates = pd.to_datetime(df_map['date_enquete'], errors='coerce').dt.date.astype(str)
+    heures = df_map['heure_interview'].astype(str)
     
-    # Création du timestamp avec conversion forcée
-    df_map['timestamp'] = pd.to_datetime(
-        dates_str + ' ' + heures_str, 
-        errors='coerce'
-    )
+    # 3. Création du timestamp
+    df_map['timestamp'] = pd.to_datetime(dates + ' ' + heures, errors='coerce')
     
-    # CRITIQUE : Supprimer les lignes où le timestamp a échoué (NaT)
-    df_map = df_map.dropna(subset=['timestamp'])
+    # 4. NETTOYAGE CRITIQUE : On ne garde QUE les lignes qui ont pu être converties en date
+    # Cela garantit que la colonne 'timestamp' est de type datetime64
+    df_map = df_map[df_map['timestamp'].notna()].copy()
     
-    # Maintenant .dt fonctionnera à coup sûr car les NaT sont supprimés
-    df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
-    df_map = df_map.sort_values(['agent_name', 'timestamp'])
+    # 5. Maintenant, l'accesseur .dt est 100% sécurisé
+    if not df_map.empty:
+        df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
+        df_map = df_map.sort_values(['agent_name', 'timestamp'])
+    else:
+        st.warning("⚠️ Aucune donnée temporelle valide pour la cartographie.")
+        return
 
     # 3. SÉLECTION DE L'AGENT ET CARTE
     col_c1, col_c2 = st.columns([2, 1])
