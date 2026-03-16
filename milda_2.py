@@ -1527,13 +1527,28 @@ def page_agent_tracking(data: pd.DataFrame):
             df_track = df_track[df_track['village'] == sel_vill]
 
     # 2. CALCUL DES DURÉES (Sur l'ensemble des données filtrées géographiquement)
+    # 2. CALCUL DES DURÉES (Version sécurisée)
     df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
-    if 'start' in df_track.columns and 'heure_interview' in df_track.columns:
-        df_track['start'] = pd.to_datetime(df_track['start'], errors='coerce')
-        df_track['end'] = pd.to_datetime(df_track['heure_interview'], errors='coerce')
-        df_track['Duree_min'] = (df_track['end'] - df_track['start']).dt.total_seconds() / 60
+    
+    # On s'assure que les colonnes existent
+    start_col = 'start' 
+    end_col = 'heure_interview' # Vérifiez si c'est bien le nom dans votre mapping
+    
+    if start_col in df_track.columns and end_col in df_track.columns:
+        # Conversion explicite
+        df_track['start_dt'] = pd.to_datetime(df_track[start_col], errors='coerce')
+        df_track['end_dt'] = pd.to_datetime(df_track[end_col], errors='coerce')
+        
+        # Calcul uniquement sur les lignes valides pour éviter l'AttributeError
+        diff = df_track['end_dt'] - df_track['start_dt']
+        
+        # On utilise .dt seulement si le résultat est de type Timedelta
+        if pd.api.types.is_timedelta64_dtype(diff):
+            df_track['Duree_min'] = diff.dt.total_seconds() / 60
+        else:
+            df_track['Duree_min'] = np.nan
     else:
-        df_track['Duree_min'] = pd.NA
+        df_track['Duree_min'] = np.nan
 
     # Nettoyage pour la carte
     df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
@@ -1639,12 +1654,19 @@ def page_agent_tracking(data: pd.DataFrame):
     st.divider()
     st.markdown("### 📋 Rapport d'activité journalier (Tous les agents)")
     
-    # On groupe par agent pour avoir un résumé global
+    # Dans la section 5 (Rapport global)
+    def safe_strftime(x):
+        try:
+            val = x.min()
+            return val.strftime('%H:%M') if pd.notnull(val) else "N/A"
+        except:
+            return "N/A"
+
     rapport_global = df_track.groupby('agent_name').agg(
         Enquêtes=('agent_name', 'count'),
-        Duree_Moyenne=('Duree_min', lambda x: round(x.mean(), 1)),
-        Heure_Debut=('start', lambda x: x.min().strftime('%H:%M')),
-        Heure_Fin=('end', lambda x: x.max().strftime('%H:%M'))
+        Duree_Moyenne=('Duree_min', lambda x: round(pd.to_numeric(x, errors='coerce').mean(), 1)),
+        Heure_Debut=('start_dt', safe_strftime),
+        Heure_Fin=('end_dt', safe_strftime)
     ).reset_index()
 
     st.dataframe(rapport_global, use_container_width=True)
