@@ -1550,12 +1550,23 @@ def page_agent_tracking(data: pd.DataFrame):
     else:
         df_track['Duree_min'] = np.nan
 
-    # Nettoyage pour la carte
+    # Nettoyage et création du timestamp sécurisé
     df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
+    
+    # On s'assure que les composants sont du texte pour la concaténation
+    dates_str = df_map['date_enquete'].dt.date.astype(str)
+    heures_str = df_map['heure_interview'].astype(str)
+    
+    # Création du timestamp avec conversion forcée
     df_map['timestamp'] = pd.to_datetime(
-        df_map['date_enquete'].dt.date.astype(str) + ' ' + df_map['heure_interview'].astype(str),
+        dates_str + ' ' + heures_str, 
         errors='coerce'
     )
+    
+    # CRITIQUE : Supprimer les lignes où le timestamp a échoué (NaT)
+    df_map = df_map.dropna(subset=['timestamp'])
+    
+    # Maintenant .dt fonctionnera à coup sûr car les NaT sont supprimés
     df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
     df_map = df_map.sort_values(['agent_name', 'timestamp'])
 
