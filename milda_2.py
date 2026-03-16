@@ -2638,11 +2638,9 @@ def main():
                 st.session_state.kobo_token = token
                 st.success("✅ Connexion réussie !")
 
-   # --- 3. LOGIQUE D'EXTRACTION KOBO ---
     if st.session_state.kobo_token:
         headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
         try:
-            # Récupération de la liste des formulaires
             assets_url = f"{server_base}/api/v2/assets.json"
             res_assets = requests.get(assets_url, headers=headers)
             
@@ -2654,37 +2652,32 @@ def main():
                 
                 if selected_form != "-- Sélectionner --":
                     if st.button("📥 Charger les données KoBo"):
-                        with st.spinner('Extraction des 10 000+ enregistrements en cours...'):
+                        with st.spinner('Extraction et calcul des indicateurs...'):
                             uid = forms[selected_form]
-                            
-                            # MODIFICATION ICI : On utilise l'export CSV synchronisé (v2)
-                            # On ajoute la limite pour dépasser les 100 par défaut
-                            data_url = f"{server_base}/api/v2/assets/{uid}/data.csv?limit=600000"
-                            #data_url = f"{server_base}/api/v2/assets/{uid}/data.csv?limit=30000"
-                            
+                            data_url = f"{server_base}/api/v2/assets/{uid}/data.json?limit=3000000"
+                            #data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
                             res_data = requests.get(data_url, headers=headers)
                             
                             if res_data.status_code == 200:
-                                # Lecture du contenu CSV directement en DataFrame
-                                csv_data = io.StringIO(res_data.text)
-                                df_raw = pd.read_csv(csv_data, sep=None, engine='python')
-                                
-                                if not df_raw.empty:
-                                    # Traitement avec vos nouveaux codes S1Q17...
+                                results = res_data.json().get('results', [])
+                                if results:
+                                    df_raw = pd.DataFrame(results)
+                                    
+                                    # Traitement universel (Mapping + Indicateurs + Nettoyage)
+                                    # Note: Cette fonction doit contenir la logique de mapping S1Q17 -> menage_servi
                                     data, stats = process_milda_dataframe(df_raw) 
 
+                                    st.write(data[['province', 'centre_sante']].head())
                                     st.session_state.data = data
                                     st.session_state.tables = generate_analysis_tables(data)
-                                    st.success(f"✅ {len(data)} enregistrements chargés avec succès !")
+                                    st.success(f"✅ {len(data)} enregistrements chargés !")
                                     st.rerun()
                                 else:
-                                    st.warning("Le formulaire sélectionné ne contient aucune donnée.")
-                            else:
-                                st.error(f"Erreur API ({res_data.status_code}) : Impossible de récupérer le CSV.")
+                                    st.warning("Le formulaire sélectionné est vide.")
             else:
                 st.error("Erreur lors de la récupération de la liste des projets.")
         except Exception as e:
-            st.error(f"Erreur lors du traitement CSV : {e}")
+            st.error(f"Erreur KoBo : {e}")
 
     # --- 4. LOGIQUE IMPORT EXCEL ---
     if uploaded_file and st.session_state.data is None:
