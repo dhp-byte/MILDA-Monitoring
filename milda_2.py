@@ -2655,7 +2655,8 @@ def main():
                     if st.button("📥 Charger les données KoBo"):
                         with st.spinner('Extraction et calcul des indicateurs...'):
                             uid = forms[selected_form]
-                            data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
+                            data_url = f"{server_base}/api/v2/assets/{uid}/data.json?limit=30000"
+                            #data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
                             res_data = requests.get(data_url, headers=headers)
                             
                             if res_data.status_code == 200:
