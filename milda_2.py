@@ -2760,7 +2760,7 @@ def main():
         with tabs[0]: page_dashboard(data, tables)
         with tabs[1]: page_analysis(data, tables)
         with tabs[2]: page_maps(data)
-        with tabs[3]: page_agent_tracking(data)
+        #with tabs[3]: page_agent_tracking(data)
         with tabs[4]: page_data_quality(data)
         with tabs[5]: page_statistics(data)
         with tabs[6]: page_export(data, tables)
