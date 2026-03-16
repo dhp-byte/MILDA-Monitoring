@@ -2659,7 +2659,8 @@ def main():
                             
                             # MODIFICATION ICI : On utilise l'export CSV synchronisé (v2)
                             # On ajoute la limite pour dépasser les 100 par défaut
-                            data_url = f"{server_base}/api/v2/assets/{uid}/data.csv?limit=30000"
+                            data_url = f"{server_base}/api/v2/assets/{uid}/data.csv?limit=600000"
+                            #data_url = f"{server_base}/api/v2/assets/{uid}/data.csv?limit=30000"
                             
                             res_data = requests.get(data_url, headers=headers)
                             
