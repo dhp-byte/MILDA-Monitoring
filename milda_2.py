@@ -2072,19 +2072,58 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     #add_executive_summary(doc, data)
     add_provincial_dashboard(doc, data)
     
-    # 1. Identifier toutes les provinces uniques
-    if 'province' in data.columns:
-        provinces = sorted(data['province'].dropna().unique())
-    else:
-        st.error("La colonne 'province' est manquante.")
-        provinces = []
-    
     for prov in provinces:
         # Filtrer les données pour la province actuelle
         df_prov = data[data['province'] == prov].copy()
         
         # Titre de la section Province
         doc.add_heading(f'Analyse : Province de {prov}', level=1)
+        
+        # ==========================================================
+        # NOUVELLE SECTION : ANALYSE PAR DISTRICT SANITAIRE
+        # ==========================================================
+        if 'district' in df_prov.columns and not df_prov.empty:
+            doc.add_heading(f'Indicateurs par District Sanitaire - {prov}', level=2)
+            
+            # 1. Agrégation par District
+            dist_stats = df_prov.groupby('district').agg(
+                total=('district', 'count'),
+                servis=('indic_servi', 'sum'),
+                correct=('indic_correct', 'sum')
+            ).reset_index()
+            
+            # 2. Calcul des indicateurs
+            dist_stats['pct_servis'] = (100 * dist_stats['servis'] / dist_stats['total']).astype(float).round(1)
+            dist_stats['pct_correct'] = (100 * dist_stats['correct'] / dist_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
+            
+            # 3. Graphique de couverture par District
+            add_matplotlib_chart(doc, dist_stats.set_index('district')['pct_servis'], f'Couverture MILDA par District - {prov} (%)', 'bar')
+            
+            # 4. Tableau par District
+            table_dist_data = []
+            for _, row in dist_stats.iterrows():
+                table_dist_data.append([
+                    str(row['district']),
+                    int(row['total']),
+                    int(row['servis']),
+                    f"{row['pct_servis']}%",
+                    int(row['correct']),
+                    f"{row['pct_correct']}%"
+                ])
+            
+            create_table(doc, table_dist_data, [
+                'District Sanitaire',
+                'Ménages dénombrés',
+                'Ménages servis',
+                '% servis',
+                'Correctement servis',
+                '% correct'
+            ])
+            doc.add_paragraph(f'Source : Analyse par district pour la province de {prov}').italic = True
+            doc.add_page_break()
+        
+        # Titre de la section Province
+        #doc.add_heading(f'Analyse : Province de {prov}', level=1)
         doc.add_heading('Ménages servis en MILDA par Centre de Santé', level=2)
         
         if 'centre_sante' in df_prov.columns and not df_prov.empty:
@@ -2093,7 +2132,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             stats_servis = df_prov.groupby('centre_sante')['indic_servi'].mean() * 100
             
             if not stats_servis.empty:
-                add_matplotlib_chart(doc, stats_servis, f'Couverture MILDA - {prov} (%)', 'bar')
+                #add_matplotlib_chart(doc, stats_servis, f'Couverture MILDA - {prov} (%)', 'bar')
                 doc.add_paragraph(f'Graphique : Taux de couverture par CS dans la province de {prov}.').italic = True
     
             # --- TABLEAU PAR PROVINCE ---
@@ -2159,6 +2198,59 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         # df_prov est déjà filtré pour la province en cours
         
         doc.add_heading(f'Analyse du marquage des ménages - {prov}', level=2)
+
+        # --- ANALYSE DU MARQUAGE PAR DISTRICT ---
+        doc.add_heading(f'Analyse du marquage par District Sanitaire - {prov}', level=2)
+        
+        if 'district' in df_prov.columns and not df_prov.empty:
+            # Filtrer uniquement les ménages servis pour le calcul du marquage
+            df_servis_dist = df_prov[df_prov['indic_servi'] == 1]
+            
+            if not df_servis_dist.empty:
+                # 1. Calcul des statistiques par District
+                dist_marquage_stats = df_servis_dist.groupby('district').agg(
+                    servis=('indic_servi', 'count'),
+                    marques=('indic_marque', 'sum')
+                ).reset_index()
+                
+                # Calcul du pourcentage sécurisé (float)
+                dist_marquage_stats['pct_marques'] = (100 * dist_marquage_stats['marques'] / dist_marquage_stats['servis']).astype(float).round(1)
+                
+                # 2. Graphique par District
+                add_matplotlib_chart(
+                    doc, 
+                    dist_marquage_stats.set_index('district')['pct_marques'], 
+                    f'Taux de marquage par District - {prov} (%)', 
+                    'bar'
+                )
+                
+                # 3. Tableau par District
+                table_dist_marquage = []
+                for _, row in dist_marquage_stats.iterrows():
+                    table_dist_marquage.append([
+                        str(row['district']),
+                        int(row['servis']),
+                        int(row['marques']),
+                        f"{row['pct_marques']}%"
+                    ])
+                
+                # Ajouter la ligne de Total Province pour le marquage
+                t_servis = dist_marquage_stats['servis'].sum()
+                t_marques = dist_marquage_stats['marques'].sum()
+                t_pct = round(100 * t_marques / t_servis, 1) if t_servis > 0 else 0
+                
+                table_dist_marquage.append(['TOTAL PROVINCE', t_servis, t_marques, f"{t_pct}%"])
+                
+                create_table(doc, table_dist_marquage, [
+                    'District Sanitaire', 
+                    'Ménages servis', 
+                    'Ménages marqués', 
+                    '% marqués'
+                ])
+            else:
+                doc.add_paragraph("Aucun ménage servi enregistré pour l'analyse du marquage dans ces districts.")
+        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
         
         if 'centre_sante' in df_prov.columns and not df_prov.empty:
             # 1. GRAPHIQUE DE MARQUAGE (Seulement pour les ménages servis)
@@ -2169,7 +2261,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                 stats_marquage = df_servis_prov.groupby('centre_sante')['indic_marque'].mean() * 100
                 
                 if not stats_marquage.empty:
-                    add_matplotlib_chart(doc, stats_marquage, f'Taux de marquage des ménages servis - {prov} (%)', 'bar')
+                    #add_matplotlib_chart(doc, stats_marquage, f'Taux de marquage des ménages servis - {prov} (%)', 'bar')
                     doc.add_paragraph(f'Graphique : Proportion des ménages servis ayant reçu un marquage (Province : {prov}).').italic = True
         
             # 2. TABLEAU DÉTAILLÉ DU MARQUAGE
@@ -2256,31 +2348,70 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     doc.add_page_break()
     
-    # ========== SENSIBILISATION ==========
+    # ========== SENSIBILISATION (INFORMATION) ==========
     doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
     
+    # --- ANALYSE PAR DISTRICT ---
+    if 'district' in data.columns:
+        doc.add_heading('Analyse de la sensibilisation par District Sanitaire', level=2)
+        
+        dist_sensi = data.groupby('district').agg(
+            total=('district', 'count'),
+            informes=('indic_info', 'sum')
+        ).reset_index()
+        
+        # Calcul sécurisé du pourcentage
+        dist_sensi['pct_informes'] = (100 * dist_sensi['informes'] / dist_sensi['total']).astype(float).round(1)
+        
+        table_dist_sensi = []
+        for _, row in dist_sensi.iterrows():
+            table_dist_sensi.append([
+                str(row['district']),
+                int(row['total']),
+                int(row['informes']),
+                f"{row['pct_informes']}%"
+            ])
+        
+        # Ligne de Total National / Global
+        total_m = dist_sensi['total'].sum()
+        total_i = dist_sensi['informes'].sum()
+        pct_g = round(100 * total_i / total_m, 1) if total_m > 0 else 0
+        table_dist_sensi.append(['TOTAL', total_m, total_i, f"{pct_g}%"])
+        
+        create_table(doc, table_dist_sensi, [
+            'District Sanitaire', 
+            'Ménages total', 
+            'Ménages informés', 
+            '% informés'
+        ])
+        doc.add_paragraph('Source : Données par district CDM-2026').italic = True
+
+    # --- ANALYSE PAR CENTRE DE SANTÉ (Votre code existant) ---
     if 'centre_sante' in data.columns:
+        doc.add_heading('Analyse de la sensibilisation par Centre de Santé', level=2)
+        
         sensi_stats = data.groupby('centre_sante').agg(
             total=('centre_sante', 'count'),
             informes=('indic_info', 'sum')
         ).reset_index()
         
-        sensi_stats['pct_informes'] = round(100 * sensi_stats['informes'] / sensi_stats['total'], 1)
+        # Utilisation de la méthode robuste pour éviter l'erreur TypeError
+        sensi_stats['pct_informes'] = (100 * sensi_stats['informes'] / sensi_stats['total']).astype(float).round(1)
         
         table_data = []
         for _, row in sensi_stats.iterrows():
             table_data.append([
-                row['centre_sante'],
-                row['total'],
-                row['informes'],
-                row['pct_informes']
+                str(row['centre_sante']),
+                int(row['total']),
+                int(row['informes']),
+                f"{row['pct_informes']}%"
             ])
         
         table_data.append([
             'Total',
-            sensi_stats['total'].sum(),
-            sensi_stats['informes'].sum(),
-            round(100 * sensi_stats['informes'].sum() / sensi_stats['total'].sum(), 1)
+            int(sensi_stats['total'].sum()),
+            int(sensi_stats['informes'].sum()),
+            f"{round(100 * sensi_stats['informes'].sum() / sensi_stats['total'].sum(), 1) if sensi_stats['total'].sum() > 0 else 0}%"
         ])
         
         create_table(doc, table_data, [
@@ -2291,6 +2422,8 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         ])
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    
+    
     
     doc.add_heading('Répartition des chefs de ménage', level=2)
     # On utilise la colonne chef identifiée précédemment
