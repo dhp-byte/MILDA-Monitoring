@@ -2356,110 +2356,110 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     #doc.add_page_break()
     
     # ========== SECTION : SENSIBILISATION (INFORMATION) ==========
-doc.add_heading('Information sur la campagne de distribution des MILDA', level=1)
-
-# --- 1. TABLEAU DE DISTRIBUTION PAR PROVINCE (SYNTHÈSE NATIONALE) ---
-if 'province' in data.columns:
-    doc.add_heading('Synthèse d\'Information sur la campagne de distribution des MILDA par Province', level=2)
+    doc.add_heading('Information sur la campagne de distribution des MILDA', level=1)
     
-    prov_sensi = data.groupby('province').agg(
-        total=('province', 'count'),
-        informes=('indic_info', 'sum')
-    ).reset_index()
-    
-    # Calcul du pourcentage par province
-    prov_sensi['pct_informes'] = (100 * prov_sensi['informes'] / prov_sensi['total']).astype(float).round(1)
-    
-    table_prov_data = []
-    for _, row in prov_sensi.iterrows():
-        table_prov_data.append([
-            str(row['province']),
-            int(row['total']),
-            int(row['informes']),
-            f"{row['pct_informes']}%"
+    # --- 1. TABLEAU DE DISTRIBUTION PAR PROVINCE (SYNTHÈSE NATIONALE) ---
+    if 'province' in data.columns:
+        doc.add_heading('Synthèse d\'Information sur la campagne de distribution des MILDA par Province', level=2)
+        
+        prov_sensi = data.groupby('province').agg(
+            total=('province', 'count'),
+            informes=('indic_info', 'sum')
+        ).reset_index()
+        
+        # Calcul du pourcentage par province
+        prov_sensi['pct_informes'] = (100 * prov_sensi['informes'] / prov_sensi['total']).astype(float).round(1)
+        
+        table_prov_data = []
+        for _, row in prov_sensi.iterrows():
+            table_prov_data.append([
+                str(row['province']),
+                int(row['total']),
+                int(row['informes']),
+                f"{row['pct_informes']}%"
+            ])
+        
+        # Ligne de Total National
+        t_n_total = prov_sensi['total'].sum()
+        t_n_informes = prov_sensi['informes'].sum()
+        t_n_pct = round(100 * t_n_informes / t_n_total, 1) if t_n_total > 0 else 0
+        table_prov_data.append(['TOTAL NATIONAL', t_n_total, t_n_informes, f"{t_n_pct}%"])
+        
+        create_table(doc, table_prov_data, [
+            'Province', 
+            'Ménages total', 
+            'Ménages informés', 
+            '% informés'
         ])
+        doc.add_paragraph('Source : Données consolidées CDM-2026').italic = True
+        #doc.add_page_break()
     
-    # Ligne de Total National
-    t_n_total = prov_sensi['total'].sum()
-    t_n_informes = prov_sensi['informes'].sum()
-    t_n_pct = round(100 * t_n_informes / t_n_total, 1) if t_n_total > 0 else 0
-    table_prov_data.append(['TOTAL NATIONAL', t_n_total, t_n_informes, f"{t_n_pct}%"])
+    # ========== SECTION : SENSIBILISATION (INFORMATION) ==========
+    #doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
     
-    create_table(doc, table_prov_data, [
-        'Province', 
-        'Ménages total', 
-        'Ménages informés', 
-        '% informés'
-    ])
-    doc.add_paragraph('Source : Données consolidées CDM-2026').italic = True
-    #doc.add_page_break()
-
-# ========== SECTION : SENSIBILISATION (INFORMATION) ==========
-#doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
-
-if 'province' in data.columns:
-    provinces = sorted(data['province'].dropna().unique())
-    
-    for prov in provinces:
-        df_prov = data[data['province'] == prov].copy()
+    if 'province' in data.columns:
+        provinces = sorted(data['province'].dropna().unique())
         
-        # --- 1. Titre de la Province ---
-        doc.add_heading(f'Province : {prov}', level=2)
-        
-        # --- 2. Analyse par District Sanitaire au sein de la Province ---
-        if 'district' in df_prov.columns and not df_prov.empty:
-            doc.add_heading(f'Information sur la campagne de distribution des MILDA par District Sanitaire - {prov}', level=3)
+        for prov in provinces:
+            df_prov = data[data['province'] == prov].copy()
             
-            dist_sensi = df_prov.groupby('district').agg(
-                total=('district', 'count'),
-                informes=('indic_info', 'sum')
-            ).reset_index()
+            # --- 1. Titre de la Province ---
+            doc.add_heading(f'Province : {prov}', level=2)
             
-            dist_sensi['pct_informes'] = (100 * dist_sensi['informes'] / dist_sensi['total']).astype(float).round(1)
-            
-            table_dist_data = []
-            for _, row in dist_sensi.iterrows():
-                table_dist_data.append([
-                    str(row['district']),
-                    int(row['total']),
-                    int(row['informes']),
-                    f"{row['pct_informes']}%"
-                ])
-            
-            # Total pour la province (ligne de résumé)
-            t_total_p = dist_sensi['total'].sum()
-            t_informes_p = dist_sensi['informes'].sum()
-            t_pct_p = round(100 * t_informes_p / t_total_p, 1) if t_total_p > 0 else 0
-            table_dist_data.append(['TOTAL PROVINCE', t_total_p, t_informes_p, f"{t_pct_p}%"])
-            
-            create_table(doc, table_dist_data, ['District Sanitaire', 'Ménages total', 'Ménages informés', '% informés'])
-            doc.add_paragraph(f'Source : CDM-2026 - Province de {prov}').italic = True
-
-        # --- 3. Analyse par Centre de Santé au sein de la Province ---
-        if 'centre_sante' in df_prov.columns and not df_prov.empty:
-            doc.add_heading(f'Détail par Centre de Santé (CS) - {prov}', level=3)
-            
-            cs_sensi = df_prov.groupby('centre_sante').agg(
-                total=('centre_sante', 'count'),
-                informes=('indic_info', 'sum')
-            ).reset_index()
-            
-            cs_sensi['pct_informes'] = (100 * cs_sensi['informes'] / cs_sensi['total']).astype(float).round(1)
-            
-            table_cs_data = []
-            for _, row in cs_sensi.iterrows():
-                table_cs_data.append([
-                    str(row['centre_sante']),
-                    int(row['total']),
-                    int(row['informes']),
-                    f"{row['pct_informes']}%"
-                ])
-            
-            create_table(doc, table_cs_data, ['Centre de Santé', 'Ménages total', 'Ménages informés', '% informés'])
-            doc.add_paragraph(f'Source : CDM-2026 - Détail CS {prov}').italic = True
-            
-        # Saut de page pour séparer les provinces
-        doc.add_page_break()
+            # --- 2. Analyse par District Sanitaire au sein de la Province ---
+            if 'district' in df_prov.columns and not df_prov.empty:
+                doc.add_heading(f'Information sur la campagne de distribution des MILDA par District Sanitaire - {prov}', level=3)
+                
+                dist_sensi = df_prov.groupby('district').agg(
+                    total=('district', 'count'),
+                    informes=('indic_info', 'sum')
+                ).reset_index()
+                
+                dist_sensi['pct_informes'] = (100 * dist_sensi['informes'] / dist_sensi['total']).astype(float).round(1)
+                
+                table_dist_data = []
+                for _, row in dist_sensi.iterrows():
+                    table_dist_data.append([
+                        str(row['district']),
+                        int(row['total']),
+                        int(row['informes']),
+                        f"{row['pct_informes']}%"
+                    ])
+                
+                # Total pour la province (ligne de résumé)
+                t_total_p = dist_sensi['total'].sum()
+                t_informes_p = dist_sensi['informes'].sum()
+                t_pct_p = round(100 * t_informes_p / t_total_p, 1) if t_total_p > 0 else 0
+                table_dist_data.append(['TOTAL PROVINCE', t_total_p, t_informes_p, f"{t_pct_p}%"])
+                
+                create_table(doc, table_dist_data, ['District Sanitaire', 'Ménages total', 'Ménages informés', '% informés'])
+                doc.add_paragraph(f'Source : CDM-2026 - Province de {prov}').italic = True
+    
+            # --- 3. Analyse par Centre de Santé au sein de la Province ---
+            if 'centre_sante' in df_prov.columns and not df_prov.empty:
+                doc.add_heading(f'Détail par Centre de Santé (CS) - {prov}', level=3)
+                
+                cs_sensi = df_prov.groupby('centre_sante').agg(
+                    total=('centre_sante', 'count'),
+                    informes=('indic_info', 'sum')
+                ).reset_index()
+                
+                cs_sensi['pct_informes'] = (100 * cs_sensi['informes'] / cs_sensi['total']).astype(float).round(1)
+                
+                table_cs_data = []
+                for _, row in cs_sensi.iterrows():
+                    table_cs_data.append([
+                        str(row['centre_sante']),
+                        int(row['total']),
+                        int(row['informes']),
+                        f"{row['pct_informes']}%"
+                    ])
+                
+                create_table(doc, table_cs_data, ['Centre de Santé', 'Ménages total', 'Ménages informés', '% informés'])
+                doc.add_paragraph(f'Source : CDM-2026 - Détail CS {prov}').italic = True
+                
+            # Saut de page pour séparer les provinces
+            doc.add_page_break()
     
     
     
@@ -2649,19 +2649,11 @@ if 'province' in data.columns:
             
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
-    # ========== CONCLUSION ==========
-    doc.add_page_break()
-    doc.add_heading('Conclusion', level=1)
-    
-    #p = doc.add_paragraph()
-    #p.add_run('Ce rapport présente une analyse complète du dénombrement-distribution de la Campagne de Distribution de Masse des MILDA 2026.\n\n')
-
     # Sauvegarder en mémoire
     output = io.BytesIO()
     doc.save(output)
     output.seek(0)
-    
-return output
+    return output
 
 
 ################################################################################
