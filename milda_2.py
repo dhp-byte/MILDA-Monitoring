@@ -720,7 +720,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
 
     # Normalisation Oui/Non
     # Dans process_milda_dataframe
-    cols_to_fix = ['menage_servi', 'menage_marque', 'norme', 'information', 'menage_chef', 'respondant_col']
+    cols_to_fix = ['menage_servi', 'menage_marque', 'norme', 'information', 'menage_chef', 'respondant_col', 'sensibilise']
     for col in cols_to_fix:
         if col in data.columns:
             # On s'assure de ne traiter que des valeurs simples
