@@ -1475,7 +1475,51 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
             mime="text/csv",
             use_container_width=True
         )
-    
+
+    with col4:
+        st.markdown("#### Google Earth")
+        st.markdown("Points GPS au format KMZ")
+        
+        if st.button("🌍 Générer KMZ", use_container_width=True):
+            # Vérifier si les colonnes de coordonnées existent
+            lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
+            lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
+            
+            if lat_col and lon_col:
+                with st.spinner("Création du fichier KMZ..."):
+                    kml = simplekml.Kml()
+                    
+                    # Nettoyage des données sans coordonnées
+                    df_geo = data.dropna(subset=[lat_col, lon_col])
+                    
+                    for _, row in df_geo.iterrows():
+                        # Création du point
+                        pnt = kml.newpoint(name=f"Ménage {row.get('id_menage', '')}")
+                        pnt.coords = [(row[lon_col], row[lat_col])]
+                        
+                        # Description personnalisée (bulle d'info dans Google Earth)
+                        description = f"""
+                        <b>Province:</b> {row.get('province', 'N/A')}<br>
+                        <b>District:</b> {row.get('district', 'N/A')}<br>
+                        <b>Ménage servi:</b> {'Oui' if row.get('indic_servi') == 1 else 'Non'}
+                        """
+                        pnt.description = description
+                    
+                    # Sauvegarde en mémoire (KMZ est un KML zippé)
+                    kmz_buffer = io.BytesIO()
+                    # simplekml peut sauvegarder directement en kmz
+                    kml.savekmz(kmz_buffer)
+                    
+                    st.download_button(
+                        label="⬇️ Télécharger KMZ",
+                        data=kmz_buffer.getvalue(),
+                        file_name=f"points_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kmz",
+                        mime="application/vnd.google-earth.kmz",
+                        use_container_width=True
+                    )
+            else:
+                st.error("Colonnes GPS (Latitude/Longitude) introuvables.")
+                
     st.markdown("---")
     
     # Prévisualisation du contenu
