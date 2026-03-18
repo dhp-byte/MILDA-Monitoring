@@ -2461,33 +2461,26 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             # Saut de page pour séparer les provinces
             doc.add_page_break()
     
-    
-    
-    #doc.add_heading('Répartition des chefs de ménage', level=2)
-    # On utilise la colonne chef identifiée précédemment
-    #chef_dist = data[chef_col].value_counts()
-    #add_matplotlib_chart(doc, chef_dist, 'Répartition des répondants (Chef vs Autre)', 'pie')
-    
-    
-    #doc.add_page_break()
-    
-    # ========== SENSIBILISATION  ==========
-    doc.add_heading('Sensibilisation sur l\'utilisation correcte lors de la campagne', level=1)
-
     # ========== SECTION : SENSIBILISATION LORS DE LA CAMPAGNE ==========
     doc.add_heading('Sensibilisation sur l\'utilisation correcte lors de la campagne', level=1)
     
     info_col = 'sensibilise'
     
     if info_col in data.columns:
+        # Nettoyage : On s'assure que la colonne est traitée comme du texte pour la comparaison
+        df_clean = data.copy()
+        df_clean[info_col] = df_clean[info_col].astype(str).str.strip().str.lower()
+    
         # --- 1. SYNTHÈSE NATIONALE PAR PROVINCE ---
         doc.add_heading('Tableau : Proportion des ménages sensibilisés par Province', level=2)
         
-        # Calcul du % de sensibilisation par province (on suppose que 'Oui' ou 1 est la valeur positive)
-        # Si 'sensibilise' est numérique (0/1), on utilise .mean(). Si c'est du texte, adaptez le filtre.
-        prov_sensi_global = data.groupby('province').agg(
+        # Définition des valeurs considérées comme "Vrai/Oui"
+        # On accepte 'oui', '1', '1.0', 'yes'
+        valeurs_positives = ['oui', '1', '1.0', 'yes']
+        
+        prov_sensi_global = df_clean.groupby('province').agg(
             total=(info_col, 'count'),
-            sensibilises=(info_col, lambda x: (x == 'Oui').sum() if x.dtype == 'object' else (x == 1).sum())
+            sensibilises=(info_col, lambda x: x.isin(valeurs_positives).sum())
         ).reset_index()
         
         prov_sensi_global['pct'] = (100 * prov_sensi_global['sensibilises'] / prov_sensi_global['total']).astype(float).round(1)
@@ -2506,10 +2499,10 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         doc.add_page_break()
     
         # --- 2. DÉTAIL PAR PROVINCE > DISTRICT > CS ---
-        provinces = sorted(data['province'].dropna().unique())
+        provinces = sorted(df_clean['province'].dropna().unique())
         
         for prov in provinces:
-            df_prov = data[data['province'] == prov].copy()
+            df_prov = df_clean[df_clean['province'] == prov].copy()
             doc.add_heading(f'Analyse détaillée : Province de {prov}', level=2)
             
             # --- A. PAR DISTRICT ---
@@ -2517,11 +2510,10 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                 doc.add_heading(f'Sensibilisation par District Sanitaire - {prov}', level=3)
                 dist_stats = df_prov.groupby('district').agg(
                     total=(info_col, 'count'),
-                    sensi=(info_col, lambda x: (x == 'Oui').sum() if x.dtype == 'object' else (x == 1).sum())
+                    sensi=(info_col, lambda x: x.isin(valeurs_positives).sum())
                 ).reset_index()
                 
                 dist_stats['pct'] = (100 * dist_stats['sensi'] / dist_stats['total']).astype(float).round(1)
-                
                 table_dist = [[str(r['district']), int(r['total']), int(r['sensi']), f"{r['pct']}%"] for _, r in dist_stats.iterrows()]
                 create_table(doc, table_dist, ['District', 'Ménages total', 'Ménages sensibilisés', '%'])
     
@@ -2530,16 +2522,16 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                 doc.add_heading(f'Détail par Centre de Santé - {prov}', level=3)
                 cs_stats = df_prov.groupby('centre_sante').agg(
                     total=(info_col, 'count'),
-                    sensi=(info_col, lambda x: (x == 'Oui').sum() if x.dtype == 'object' else (x == 1).sum())
+                    sensi=(info_col, lambda x: x.isin(valeurs_positives).sum())
                 ).reset_index()
                 
                 cs_stats['pct'] = (100 * cs_stats['sensi'] / cs_stats['total']).astype(float).round(1)
-                
                 table_cs = [[str(r['centre_sante']), int(r['total']), int(r['sensi']), f"{r['pct']}%"] for _, r in cs_stats.iterrows()]
                 create_table(doc, table_cs, ['Centre de Santé', 'Ménages total', 'Ménages sensibilisés', '%'])
     
-            doc.add_paragraph('Source : CDM-2026').italic = True
             doc.add_page_break()
+    
+  
 
     # Source d'information (source)
     if 'source' in data.columns:
