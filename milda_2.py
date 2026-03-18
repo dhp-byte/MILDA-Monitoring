@@ -2550,7 +2550,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     # ========== RAISONS NON SCAN & SENSIBILISATION ==========
     if 'raison_scan' in data.columns:
     # 1. Nettoyage des données
-    df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
+        df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
     
     if not df_non_scan.empty:
         # 2. Dictionnaire de correspondance EXACT (Codes KoBo -> Libellés)
