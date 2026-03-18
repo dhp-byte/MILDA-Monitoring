@@ -1478,48 +1478,65 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
         )
 
     with col4:
-        st.markdown("#### Google Earth")
-        st.markdown("Points GPS au format KMZ")
+        st.markdown("#### Google Earth (ZIP)")
+        st.markdown("Dossiers KMZ par Province et District")
         
-        if st.button("🌍 Générer KMZ", use_container_width=True):
-            # Vérifier si les colonnes de coordonnées existent
+        if st.button("🌍 Générer Pack ZIP", use_container_width=True):
+            # Détection des colonnes GPS
             lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
             lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
             
             if lat_col and lon_col:
-                with st.spinner("Création du fichier KMZ..."):
-                    kml = simplekml.Kml()
+                with st.spinner("Organisation des dossiers..."):
+                    # Création du buffer pour le fichier ZIP final
+                    zip_buffer = io.BytesIO()
                     
-                    # Nettoyage des données sans coordonnées
-                    df_geo = data.dropna(subset=[lat_col, lon_col])
-                    
-                    for _, row in df_geo.iterrows():
-                        # Création du point
-                        pnt = kml.newpoint(name=f"Ménage {row.get('id_menage', '')}")
-                        pnt.coords = [(row[lon_col], row[lat_col])]
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        # On groupe les données par Province et District
+                        # On s'assure de supprimer les lignes sans coordonnées
+                        df_geo = data.dropna(subset=[lat_col, lon_col])
                         
-                        # Description personnalisée (bulle d'info dans Google Earth)
-                        description = f"""
-                        <b>Province:</b> {row.get('province', 'N/A')}<br>
-                        <b>District:</b> {row.get('district', 'N/A')}<br>
-                        <b>Ménage servi:</b> {'Oui' if row.get('indic_servi') == 1 else 'Non'}
-                        """
-                        pnt.description = description
-                    
-                    # Sauvegarde en mémoire (KMZ est un KML zippé)
-                    kmz_buffer = io.BytesIO()
-                    # simplekml peut sauvegarder directement en kmz
-                    kml.savekmz(kmz_buffer)
-                    
+                        grouped = df_geo.groupby(['province', 'district'])
+                        
+                        for (prov_name, dist_name), group in grouped:
+                            kml = simplekml.Kml()
+                            
+                            for _, row in group.iterrows():
+                                # Création du point avec ID ménage
+                                name = f"Ménage_{row.get('id_menage', 'Inconnu')}"
+                                pnt = kml.newpoint(name=name)
+                                pnt.coords = [(row[lon_col], row[lat_col])]
+                                
+                                # Infos dans la bulle Google Earth
+                                pnt.description = f"""
+                                <b>Province:</b> {prov_name}<br>
+                                <b>District:</b> {dist_name}<br>
+                                <b>CS:</b> {row.get('centre_sante', 'N/A')}<br>
+                                <b>Statut Servi:</b> {'Oui' if row.get('indic_servi') == 1 else 'Non'}
+                                """
+                            
+                            # Conversion du KML en KMZ (en mémoire)
+                            kmz_data = kml.get_kmz() 
+                            
+                            # Création du chemin de fichier dans le ZIP : Province/District.kmz
+                            # On nettoie les noms pour éviter les caractères interdits dans les dossiers
+                            clean_prov = str(prov_name).replace("/", "-")
+                            clean_dist = str(dist_name).replace("/", "-")
+                            file_path = f"{clean_prov}/{clean_dist}.kmz"
+                            
+                            # Ajout au fichier ZIP
+                            zip_file.writestr(file_path, kmz_data)
+
+                    # Bouton de téléchargement du ZIP
                     st.download_button(
-                        label="⬇️ Télécharger KMZ",
-                        data=kmz_buffer.getvalue(),
-                        file_name=f"points_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.kmz",
-                        mime="application/vnd.google-earth.kmz",
+                        label="⬇️ Télécharger ZIP (KMZ)",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"cartographie_milda_{datetime.now().strftime('%Y%m%d')}.zip",
+                        mime="application/zip",
                         use_container_width=True
                     )
             else:
-                st.error("Colonnes GPS (Latitude/Longitude) introuvables.")
+                st.error("Colonnes GPS introuvables pour la cartographie.")
                 
     st.markdown("---")
     
