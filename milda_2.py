@@ -1498,7 +1498,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                             
                             for _, row in group.iterrows():
                                 #name = f"Ménage_{row.get('id_menage', 'Inconnu')}"
-                                pnt = kml.newpoint(name=name)
+                                pnt = "" #kml.newpoint(name=name)
                                 pnt.coords = [(row[lon_col], row[lat_col])]
                                 
                                 # --- Coloration Logique ---
