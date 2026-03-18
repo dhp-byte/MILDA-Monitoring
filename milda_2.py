@@ -1432,7 +1432,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     # Calcul des métriques pour le rapport
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.markdown("#### Excel")
