@@ -2548,17 +2548,64 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
     # ========== RAISONS NON SCAN & SENSIBILISATION ==========
-    # Raison non-scan (raison_scan)
     if 'raison_scan' in data.columns:
-        # On ne regarde que les ménages qui ont des moustiquaires non scannées
-        df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')]
-        if not df_non_scan.empty:
-            doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
-            raison_counts = df_non_scan['raison_scan'].str.split(', ').explode().value_counts()
-            total_non_scan = len(df_non_scan)
-            table_raison = [[v, c, f"{(c/total_non_scan*100):.1f}"] for v, c in raison_counts.items()]
-            create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
-            doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+    # 1. On ne regarde que les ménages qui ont des moustiquaires non scannées
+    df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
+    
+    if not df_non_scan.empty:
+        # 2. Définition du dictionnaire de correspondance (Mapping)
+        # Assurez-vous que ces numéros correspondent exactement à votre XLSForm
+        mapping_raisons = {
+            '1': "Propriétaire absent",
+            '2': "Moustiquaire déjà suspendue / inaccessible",
+            '3': "Le scan prend trop de temps",
+            '4': "Problème avec le téléphone",
+            '5': "Étiquette manquante",
+            '6': "Code QR flou ou trop petit",
+            '7': "Moustiquaire envoyée ailleurs / redistribuée",
+            '8': "Le répondant a refusé l'accès",
+            '9': "Éclairage insuffisant",
+            '10': "Autre (à préciser)",
+            '778': "Étiquette usée"
+        }
+
+        doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
+
+        # 3. Nettoyage et comptage
+        # On sépare les choix multiples (split), on transforme les codes en noms via le mapping, 
+        # et on explose la liste pour compter chaque motif individuellement.
+        all_raisons = df_non_scan['raison_scan'].astype(str).str.split()
+        
+        # On remplace chaque code par son nom, si le code n'est pas dans le dictionnaire on garde le code
+        raisons_flat = []
+        for row in all_raisons:
+            for code in row:
+                raisons_flat.append(mapping_raisons.get(code, code))
+        
+        # 4. Calcul des effectifs
+        from collections import Counter
+        counts = Counter(raisons_flat)
+        total_reponses = len(df_non_scan) # Base : nombre de ménages concernés
+
+        # 5. Préparation des données pour le tableau
+        table_raison = []
+        # On trie par effectif décroissant
+        sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+        
+        for motif, effectif in sorted_counts:
+            # On ignore les codes qui n'ont pas pu être traduits si nécessaire
+            # ou on affiche tout
+            pourcentage = (effectif / total_reponses) * 100
+            table_raison.append([
+                str(motif), 
+                int(effectif), 
+                f"{pourcentage:.1f}%"
+            ])
+
+        # 6. Création du tableau Word
+        create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
+        
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
     # ========== INFORMATION CAMPAGNE ==========
     doc.add_heading('1.1 Information de la campagne de distribution', level=1)
