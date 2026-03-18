@@ -2072,7 +2072,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     #add_executive_summary(doc, data)
     add_provincial_dashboard(doc, data)
     
-    for prov in provinces:
+    for prov in province:
         # Filtrer les données pour la province actuelle
         df_prov = data[data['province'] == prov].copy()
         
