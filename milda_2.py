@@ -2549,12 +2549,14 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     # ========== RAISONS NON SCAN & SENSIBILISATION ==========
     if 'raison_scan' in data.columns:
-    # 1. Nettoyage des données
+    # 1. Nettoyage : On ne prend que les lignes avec une raison
         df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
     
     if not df_non_scan.empty:
-        # 2. Dictionnaire de correspondance EXACT (Codes KoBo -> Libellés)
-        # Modifiez les chiffres si vos codes XLSForm sont différents
+        doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
+
+        # 2. DEFINITION DU MAPPING (Traduire les codes ou corriger les textes)
+        # On définit les phrases complètes pour éviter le découpage par mot
         mapping_raisons = {
             '1': "Propriétaire de la moustiquaire absent",
             '2': "Moustiquaire déjà suspendue / inaccessible",
@@ -2569,48 +2571,42 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             '778': "Étiquette usée"
         }
 
-        doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
+        # 3. FONCTION DE TRADUCTION SÉCURISÉE
+        def extraire_motifs_complets(valeur):
+            # On sépare les choix (KoBo utilise souvent l'espace "1 2")
+            choix = str(valeur).split()
+            resultats = []
+            for c in choix:
+                # Si c'est un chiffre, on prend la phrase du dictionnaire
+                # Sinon, on garde le texte tel quel (si c'est déjà une phrase)
+                resultats.append(mapping_raisons.get(c, c))
+            return resultats
 
-        # 3. Traitement des réponses multiples sans casser les phrases
-        def traduire_codes(cellule):
-            # KoBo sépare les choix par un espace : "1 2 5"
-            codes = str(cellule).split()
-            return [mapping_raisons.get(c, f"Code {c}") for c in codes]
-
-        # Appliquer la traduction et "exploser" pour compter chaque motif
-        serie_raisons = df_non_scan['raison_scan'].apply(traduire_codes).explode()
+        # 4. APPLICATION ET COMPTAGE
+        # On "explose" les listes de motifs mais SANS couper les mots des phrases
+        tous_les_motifs = df_non_scan['raison_scan'].apply(extraire_motifs_complets).explode()
         
-        # 4. Calcul des effectifs par motif entier
-        counts = serie_raisons.value_counts()
-        total_menages = len(df_non_scan) # Base de calcul pour le %
+        # On compte les occurrences de chaque phrase entière
+        comptage = tous_les_motifs.value_counts()
+        total_menages = len(df_non_scan)
 
+        # 5. CONSTRUCTION DU TABLEAU
         table_raison = []
-        for motif, effectif in counts.items():
-            pourcentage = (effectif / total_menages) * 100
-            table_raison.append([
-                str(motif), 
-                int(effectif), 
-                f"{pourcentage:.1f}%"
-            ])
+        for motif, effectif in comptage.items():
+            # On ignore les résidus de mots isolés s'il en reste (ex: "le", "la", "de")
+            # pour ne garder que les phrases avec du sens.
+            if len(str(motif)) > 5: 
+                pourcentage = (effectif / total_menages) * 100
+                table_raison.append([
+                    str(motif), 
+                    int(effectif), 
+                    f"{pourcentage:.1f}%"
+                ])
 
-        # 5. Création du tableau dans le document Word
+        # 6. GÉNÉRATION DANS LE RAPPORT
         create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-    
-    # ========== INFORMATION CAMPAGNE ==========
-    doc.add_heading('1.1 Information de la campagne de distribution', level=1)
-        
-    # Tableau 6 : Proportion globale
-    info_counts = data['information'].value_counts()
-    total_info = len(data)
-    table_6 = [
-            ["Non", info_counts.get('Non', 0), f"{(info_counts.get('Non', 0)/total_info*100):.2f}"],
-            ["Oui", info_counts.get('Oui', 0), f"{(info_counts.get('Oui', 0)/total_info*100):.2f}"],
-            ["Total", total_info, "100"]
-        ]
-    create_table(doc, table_6, ["Étiez-vous informé...", "Effectif", "Fréquence"])
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
     # ========== CONCLUSION ==========
     doc.add_page_break()
