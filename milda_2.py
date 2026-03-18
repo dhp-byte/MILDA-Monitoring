@@ -2549,14 +2549,14 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     # ========== RAISONS NON SCAN & SENSIBILISATION ==========
     if 'raison_scan' in data.columns:
-    # 1. On ne regarde que les ménages qui ont des moustiquaires non scannées
-        df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
+    # 1. Nettoyage des données
+    df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
     
     if not df_non_scan.empty:
-        # 2. Définition du dictionnaire de correspondance (Mapping)
-        # Assurez-vous que ces numéros correspondent exactement à votre XLSForm
+        # 2. Dictionnaire de correspondance EXACT (Codes KoBo -> Libellés)
+        # Modifiez les chiffres si vos codes XLSForm sont différents
         mapping_raisons = {
-            '1': "Propriétaire absent",
+            '1': "Propriétaire de la moustiquaire absent",
             '2': "Moustiquaire déjà suspendue / inaccessible",
             '3': "Le scan prend trop de temps",
             '4': "Problème avec le téléphone",
@@ -2571,38 +2571,29 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
 
         doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
 
-        # 3. Nettoyage et comptage
-        # On sépare les choix multiples (split), on transforme les codes en noms via le mapping, 
-        # et on explose la liste pour compter chaque motif individuellement.
-        all_raisons = df_non_scan['raison_scan'].astype(str).str.split()
-        
-        # On remplace chaque code par son nom, si le code n'est pas dans le dictionnaire on garde le code
-        raisons_flat = []
-        for row in all_raisons:
-            for code in row:
-                raisons_flat.append(mapping_raisons.get(code, code))
-        
-        # 4. Calcul des effectifs
-        from collections import Counter
-        counts = Counter(raisons_flat)
-        total_reponses = len(df_non_scan) # Base : nombre de ménages concernés
+        # 3. Traitement des réponses multiples sans casser les phrases
+        def traduire_codes(cellule):
+            # KoBo sépare les choix par un espace : "1 2 5"
+            codes = str(cellule).split()
+            return [mapping_raisons.get(c, f"Code {c}") for c in codes]
 
-        # 5. Préparation des données pour le tableau
-        table_raison = []
-        # On trie par effectif décroissant
-        sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+        # Appliquer la traduction et "exploser" pour compter chaque motif
+        serie_raisons = df_non_scan['raison_scan'].apply(traduire_codes).explode()
         
-        for motif, effectif in sorted_counts:
-            # On ignore les codes qui n'ont pas pu être traduits si nécessaire
-            # ou on affiche tout
-            pourcentage = (effectif / total_reponses) * 100
+        # 4. Calcul des effectifs par motif entier
+        counts = serie_raisons.value_counts()
+        total_menages = len(df_non_scan) # Base de calcul pour le %
+
+        table_raison = []
+        for motif, effectif in counts.items():
+            pourcentage = (effectif / total_menages) * 100
             table_raison.append([
                 str(motif), 
                 int(effectif), 
                 f"{pourcentage:.1f}%"
             ])
 
-        # 6. Création du tableau Word
+        # 5. Création du tableau dans le document Word
         create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
