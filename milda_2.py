@@ -2653,15 +2653,15 @@ if 'province' in data.columns:
     doc.add_page_break()
     doc.add_heading('Conclusion', level=1)
     
-    p = doc.add_paragraph()
-    p.add_run('Ce rapport présente une analyse complète du dénombrement-distribution de la Campagne de Distribution de Masse des MILDA 2026.\n\n')
+    #p = doc.add_paragraph()
+    #p.add_run('Ce rapport présente une analyse complète du dénombrement-distribution de la Campagne de Distribution de Masse des MILDA 2026.\n\n')
 
     # Sauvegarder en mémoire
     output = io.BytesIO()
     doc.save(output)
     output.seek(0)
     
-    return output
+return output
 
 
 ################################################################################
