@@ -2353,117 +2353,193 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
-    doc.add_page_break()
+    #doc.add_page_break()
     
-    # ========== SENSIBILISATION (INFORMATION) ==========
-    doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
-    
-    # --- ANALYSE PAR DISTRICT ---
-    if 'district' in data.columns:
-        doc.add_heading('Analyse de la sensibilisation par District Sanitaire', level=2)
-        
-        dist_sensi = data.groupby('district').agg(
-            total=('district', 'count'),
-            informes=('indic_info', 'sum')
-        ).reset_index()
-        
-        # Calcul sécurisé du pourcentage
-        dist_sensi['pct_informes'] = (100 * dist_sensi['informes'] / dist_sensi['total']).astype(float).round(1)
-        
-        table_dist_sensi = []
-        for _, row in dist_sensi.iterrows():
-            table_dist_sensi.append([
-                str(row['district']),
-                int(row['total']),
-                int(row['informes']),
-                f"{row['pct_informes']}%"
-            ])
-        
-        # Ligne de Total National / Global
-        total_m = dist_sensi['total'].sum()
-        total_i = dist_sensi['informes'].sum()
-        pct_g = round(100 * total_i / total_m, 1) if total_m > 0 else 0
-        table_dist_sensi.append(['TOTAL', total_m, total_i, f"{pct_g}%"])
-        
-        create_table(doc, table_dist_sensi, [
-            'District Sanitaire', 
-            'Ménages total', 
-            'Ménages informés', 
-            '% informés'
-        ])
-        doc.add_paragraph('Source : Données par district CDM-2026').italic = True
+    # ========== SECTION : SENSIBILISATION (INFORMATION) ==========
+doc.add_heading('Information sur la campagne de distribution des MILDA', level=1)
 
-    # --- ANALYSE PAR CENTRE DE SANTÉ (Votre code existant) ---
-    if 'centre_sante' in data.columns:
-        doc.add_heading('Analyse de la sensibilisation par Centre de Santé', level=2)
+# --- 1. TABLEAU DE DISTRIBUTION PAR PROVINCE (SYNTHÈSE NATIONALE) ---
+if 'province' in data.columns:
+    doc.add_heading('Synthèse d\'Information sur la campagne de distribution des MILDA par Province', level=2)
+    
+    prov_sensi = data.groupby('province').agg(
+        total=('province', 'count'),
+        informes=('indic_info', 'sum')
+    ).reset_index()
+    
+    # Calcul du pourcentage par province
+    prov_sensi['pct_informes'] = (100 * prov_sensi['informes'] / prov_sensi['total']).astype(float).round(1)
+    
+    table_prov_data = []
+    for _, row in prov_sensi.iterrows():
+        table_prov_data.append([
+            str(row['province']),
+            int(row['total']),
+            int(row['informes']),
+            f"{row['pct_informes']}%"
+        ])
+    
+    # Ligne de Total National
+    t_n_total = prov_sensi['total'].sum()
+    t_n_informes = prov_sensi['informes'].sum()
+    t_n_pct = round(100 * t_n_informes / t_n_total, 1) if t_n_total > 0 else 0
+    table_prov_data.append(['TOTAL NATIONAL', t_n_total, t_n_informes, f"{t_n_pct}%"])
+    
+    create_table(doc, table_prov_data, [
+        'Province', 
+        'Ménages total', 
+        'Ménages informés', 
+        '% informés'
+    ])
+    doc.add_paragraph('Source : Données consolidées CDM-2026').italic = True
+    #doc.add_page_break()
+
+# ========== SECTION : SENSIBILISATION (INFORMATION) ==========
+#doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
+
+if 'province' in data.columns:
+    provinces = sorted(data['province'].dropna().unique())
+    
+    for prov in provinces:
+        df_prov = data[data['province'] == prov].copy()
         
-        sensi_stats = data.groupby('centre_sante').agg(
-            total=('centre_sante', 'count'),
-            informes=('indic_info', 'sum')
+        # --- 1. Titre de la Province ---
+        doc.add_heading(f'Province : {prov}', level=2)
+        
+        # --- 2. Analyse par District Sanitaire au sein de la Province ---
+        if 'district' in df_prov.columns and not df_prov.empty:
+            doc.add_heading(f'Information sur la campagne de distribution des MILDA par District Sanitaire - {prov}', level=3)
+            
+            dist_sensi = df_prov.groupby('district').agg(
+                total=('district', 'count'),
+                informes=('indic_info', 'sum')
+            ).reset_index()
+            
+            dist_sensi['pct_informes'] = (100 * dist_sensi['informes'] / dist_sensi['total']).astype(float).round(1)
+            
+            table_dist_data = []
+            for _, row in dist_sensi.iterrows():
+                table_dist_data.append([
+                    str(row['district']),
+                    int(row['total']),
+                    int(row['informes']),
+                    f"{row['pct_informes']}%"
+                ])
+            
+            # Total pour la province (ligne de résumé)
+            t_total_p = dist_sensi['total'].sum()
+            t_informes_p = dist_sensi['informes'].sum()
+            t_pct_p = round(100 * t_informes_p / t_total_p, 1) if t_total_p > 0 else 0
+            table_dist_data.append(['TOTAL PROVINCE', t_total_p, t_informes_p, f"{t_pct_p}%"])
+            
+            create_table(doc, table_dist_data, ['District Sanitaire', 'Ménages total', 'Ménages informés', '% informés'])
+            doc.add_paragraph(f'Source : CDM-2026 - Province de {prov}').italic = True
+
+        # --- 3. Analyse par Centre de Santé au sein de la Province ---
+        if 'centre_sante' in df_prov.columns and not df_prov.empty:
+            doc.add_heading(f'Détail par Centre de Santé (CS) - {prov}', level=3)
+            
+            cs_sensi = df_prov.groupby('centre_sante').agg(
+                total=('centre_sante', 'count'),
+                informes=('indic_info', 'sum')
+            ).reset_index()
+            
+            cs_sensi['pct_informes'] = (100 * cs_sensi['informes'] / cs_sensi['total']).astype(float).round(1)
+            
+            table_cs_data = []
+            for _, row in cs_sensi.iterrows():
+                table_cs_data.append([
+                    str(row['centre_sante']),
+                    int(row['total']),
+                    int(row['informes']),
+                    f"{row['pct_informes']}%"
+                ])
+            
+            create_table(doc, table_cs_data, ['Centre de Santé', 'Ménages total', 'Ménages informés', '% informés'])
+            doc.add_paragraph(f'Source : CDM-2026 - Détail CS {prov}').italic = True
+            
+        # Saut de page pour séparer les provinces
+        doc.add_page_break()
+    
+    
+    
+    #doc.add_heading('Répartition des chefs de ménage', level=2)
+    # On utilise la colonne chef identifiée précédemment
+    #chef_dist = data[chef_col].value_counts()
+    #add_matplotlib_chart(doc, chef_dist, 'Répartition des répondants (Chef vs Autre)', 'pie')
+    
+    
+    #doc.add_page_break()
+    
+    # ========== SENSIBILISATION  ==========
+    doc.add_heading('Sensibilisation sur l\'utilisation correcte lors de la campagne', level=1)
+
+    # ========== SECTION : SENSIBILISATION LORS DE LA CAMPAGNE ==========
+    doc.add_heading('Sensibilisation sur l\'utilisation correcte lors de la campagne', level=1)
+    
+    info_col = 'sensibilise'
+    
+    if info_col in data.columns:
+        # --- 1. SYNTHÈSE NATIONALE PAR PROVINCE ---
+        doc.add_heading('Tableau : Proportion des ménages sensibilisés par Province', level=2)
+        
+        # Calcul du % de sensibilisation par province (on suppose que 'Oui' ou 1 est la valeur positive)
+        # Si 'sensibilise' est numérique (0/1), on utilise .mean(). Si c'est du texte, adaptez le filtre.
+        prov_sensi_global = data.groupby('province').agg(
+            total=(info_col, 'count'),
+            sensibilises=(info_col, lambda x: (x == 'Oui').sum() if x.dtype == 'object' else (x == 1).sum())
         ).reset_index()
         
-        # Utilisation de la méthode robuste pour éviter l'erreur TypeError
-        sensi_stats['pct_informes'] = (100 * sensi_stats['informes'] / sensi_stats['total']).astype(float).round(1)
+        prov_sensi_global['pct'] = (100 * prov_sensi_global['sensibilises'] / prov_sensi_global['total']).astype(float).round(1)
         
-        table_data = []
-        for _, row in sensi_stats.iterrows():
-            table_data.append([
-                str(row['centre_sante']),
-                int(row['total']),
-                int(row['informes']),
-                f"{row['pct_informes']}%"
-            ])
+        table_prov = []
+        for _, row in prov_sensi_global.iterrows():
+            table_prov.append([str(row['province']), int(row['total']), int(row['sensibilises']), f"{row['pct']}%"])
         
-        table_data.append([
-            'Total',
-            int(sensi_stats['total'].sum()),
-            int(sensi_stats['informes'].sum()),
-            f"{round(100 * sensi_stats['informes'].sum() / sensi_stats['total'].sum(), 1) if sensi_stats['total'].sum() > 0 else 0}%"
-        ])
+        # Ligne Total National
+        t_n_total = prov_sensi_global['total'].sum()
+        t_n_sensi = prov_sensi_global['sensibilises'].sum()
+        t_n_pct = round(100 * t_n_sensi / t_n_total, 1) if t_n_total > 0 else 0
+        table_prov.append(['TOTAL NATIONAL', t_n_total, t_n_sensi, f"{t_n_pct}%"])
         
-        create_table(doc, table_data, [
-            'CS',
-            'Ménages total',
-            'Ménages informés',
-            '% informés'
-        ])
+        create_table(doc, table_prov, ['Province', 'Ménages total', 'Ménages sensibilisés', '% sensibilisés'])
+        doc.add_page_break()
+    
+        # --- 2. DÉTAIL PAR PROVINCE > DISTRICT > CS ---
+        provinces = sorted(data['province'].dropna().unique())
         
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-    
-    
-    
-    doc.add_heading('Répartition des chefs de ménage', level=2)
-    # On utilise la colonne chef identifiée précédemment
-    chef_dist = data[chef_col].value_counts()
-    add_matplotlib_chart(doc, chef_dist, 'Répartition des répondants (Chef vs Autre)', 'pie')
-    
-    
-    doc.add_page_break()
-    
-    # ========== INFORMATION SUR LA CAMPAGNE ==========
-    doc.add_heading('Information de la campagne de distribution', level=1)
-    
-    # Tableau global
-    if 'sensibilise' in data.columns or any('inform' in col.lower() for col in data.columns):
-        info_col = 'sensibilise'
-        if info_col in data.columns:
-            info_counts = data[info_col].value_counts()
-            total = len(data)
+        for prov in provinces:
+            df_prov = data[data['province'] == prov].copy()
+            doc.add_heading(f'Analyse détaillée : Province de {prov}', level=2)
             
-            table_data = []
-            for value, count in info_counts.items():
-                freq = round(count / total * 100, 2)
-                table_data.append([value, count, freq])
-            table_data.append(['Total', total, 100.00])
-            
-            doc.add_heading('Tableau : Proportion des ménages informés sur la campagne', level=2)
-            create_table(doc, table_data, [
-                'Étiez-vous informé de la campagne ?',
-                'Effectif',
-                'Fréquence'
-            ])
-            
-            doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+            # --- A. PAR DISTRICT ---
+            if 'district' in df_prov.columns:
+                doc.add_heading(f'Sensibilisation par District Sanitaire - {prov}', level=3)
+                dist_stats = df_prov.groupby('district').agg(
+                    total=(info_col, 'count'),
+                    sensi=(info_col, lambda x: (x == 'Oui').sum() if x.dtype == 'object' else (x == 1).sum())
+                ).reset_index()
+                
+                dist_stats['pct'] = (100 * dist_stats['sensi'] / dist_stats['total']).astype(float).round(1)
+                
+                table_dist = [[str(r['district']), int(r['total']), int(r['sensi']), f"{r['pct']}%"] for _, r in dist_stats.iterrows()]
+                create_table(doc, table_dist, ['District', 'Ménages total', 'Ménages sensibilisés', '%'])
+    
+            # --- B. PAR CENTRE DE SANTÉ ---
+            if 'centre_sante' in df_prov.columns:
+                doc.add_heading(f'Détail par Centre de Santé - {prov}', level=3)
+                cs_stats = df_prov.groupby('centre_sante').agg(
+                    total=(info_col, 'count'),
+                    sensi=(info_col, lambda x: (x == 'Oui').sum() if x.dtype == 'object' else (x == 1).sum())
+                ).reset_index()
+                
+                cs_stats['pct'] = (100 * cs_stats['sensi'] / cs_stats['total']).astype(float).round(1)
+                
+                table_cs = [[str(r['centre_sante']), int(r['total']), int(r['sensi']), f"{r['pct']}%"] for _, r in cs_stats.iterrows()]
+                create_table(doc, table_cs, ['Centre de Santé', 'Ménages total', 'Ménages sensibilisés', '%'])
+    
+            doc.add_paragraph('Source : CDM-2026').italic = True
+            doc.add_page_break()
 
     # Source d'information (source)
     if 'source' in data.columns:
@@ -2483,40 +2559,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         table_conseil = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in conseil_series.items()]
         create_table(doc, table_conseil, ['Conseil prodigué', 'Effectif', '% de ménages'])
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-        
-    # ========== ANALYSE DE LA DIFFÉRENCE ==========
-    doc.add_heading('Tableau 3 : Différence des moustiquaires reçues', level=2)
-    
-    # Recalcul de la différence selon la règle spécifique
-    data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
-    data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
-    
-    def categorize_diff(x):
-        if x < 0: return "Moins que la norme"
-        elif x == 0: return "Norme respectée"
-        else: return "Plus que la norme"
-    
-    data['diff_label'] = data['diff_custom'].apply(categorize_diff)
-    
-    # Calcul des effectifs
-    diff_counts = data['diff_label'].value_counts()
-    total_diff = len(data)
-    
-    table_diff = []
-    for cat in ["Moins que la norme", "Norme respectée", "Plus que la norme"]:
-        count = diff_counts.get(cat, 0)
-        freq = (count / total_diff) * 100
-        table_diff.append([cat, count, f"{freq:.2f}"])
-    
-    table_diff.append(['Total', total_diff, '100.00'])
-    
-    create_table(doc, table_diff, ['Différence par rapport à la norme', 'Effectif', 'Fréquence (%)'])
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
-    
-    # Optionnel : Ajouter le graphique correspondant
-    diff_stats = (data['diff_label'].value_counts(normalize=True) * 100)
-    add_matplotlib_chart(doc, diff_stats, 'Respect de la norme de distribution (%)', 'bar')
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
     # ========== CALCUL DES COMPTEURS DE SCANS (À ajouter au début de la fonction) ==========
 
