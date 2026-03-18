@@ -2079,7 +2079,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         st.error("La colonne 'province' est manquante.")
         provinces = []
 
-    for prov in province:
+    for prov in provinces:
         # Filtrer les données pour la province actuelle
         df_prov = data[data['province'] == prov].copy()
         
