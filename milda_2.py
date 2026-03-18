@@ -2071,7 +2071,14 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
 
     #add_executive_summary(doc, data)
     add_provincial_dashboard(doc, data)
-    
+
+    # 1. Identifier toutes les provinces uniques
+    if 'province' in data.columns:
+        provinces = sorted(data['province'].dropna().unique()) # Notez le 's' à provinces
+    else:
+        st.error("La colonne 'province' est manquante.")
+        provinces = []
+
     for prov in province:
         # Filtrer les données pour la province actuelle
         df_prov = data[data['province'] == prov].copy()
