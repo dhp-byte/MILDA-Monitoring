@@ -2549,53 +2549,49 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
     # ========== RAISONS NON SCAN & SENSIBILISATION ==========
     if 'raison_scan' in data.columns:
-    # 1. Nettoyage : On ne prend que les lignes avec une raison
+    # 1. Nettoyage initial
         df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
     
     if not df_non_scan.empty:
         doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
 
-        # 2. DEFINITION DU MAPPING (Traduire les codes ou corriger les textes)
-        # On définit les phrases complètes pour éviter le découpage par mot
-        mapping_raisons = {
-            '1': "Propriétaire de la moustiquaire absent",
-            '2': "Moustiquaire déjà suspendue / inaccessible",
-            '3': "Le scan prend trop de temps",
-            '4': "Problème avec le téléphone",
-            '5': "Étiquette manquante",
-            '6': "Code QR flou ou trop petit",
-            '7': "Moustiquaire envoyée ailleurs / redistribuée",
-            '8': "Le répondant a refusé l'accès",
-            '9': "Éclairage insuffisant",
-            '10': "Autre (à préciser)",
-            '778': "Étiquette usée"
-        }
+        # 2. LA LISTE BLANCHE : Seuls ces libellés exacts seront conservés
+        # Cela élimine automatiquement les mots isolés comme "absent", "la", "le"
+        motifs_officiels = [
+            "Propriétaire de la moustiquaire absent",
+            "Moustiquaire déjà suspendue / inaccessible",
+            "Le scan prend trop de temps",
+            "Problème avec le téléphone",
+            "Étiquette manquante",
+            "Code QR flou ou trop petit",
+            "Moustiquaire envoyée ailleurs / redistribuée",
+            "Le répondant a refusé l'accès",
+            "Éclairage insuffisant",
+            "Autre (à préciser)",
+            "Étiquette usée"
+        ]
 
-        # 3. FONCTION DE TRADUCTION SÉCURISÉE
-        def extraire_motifs_complets(valeur):
-            # On sépare les choix (KoBo utilise souvent l'espace "1 2")
-            choix = str(valeur).split()
-            resultats = []
-            for c in choix:
-                # Si c'est un chiffre, on prend la phrase du dictionnaire
-                # Sinon, on garde le texte tel quel (si c'est déjà une phrase)
-                resultats.append(mapping_raisons.get(c, c))
-            return resultats
+        # 3. FONCTION DE FILTRAGE STRICT
+        def filtrer_motifs(valeur):
+            # On cherche si l'un des motifs officiels est présent dans la cellule
+            # (Gestion des choix multiples KoBo)
+            trouves = []
+            for motif in motifs_officiels:
+                if motif in str(valeur):
+                    trouves.append(motif)
+            return trouves
 
-        # 4. APPLICATION ET COMPTAGE
-        # On "explose" les listes de motifs mais SANS couper les mots des phrases
-        tous_les_motifs = df_non_scan['raison_scan'].apply(extraire_motifs_complets).explode()
+        # 4. APPLICATION
+        # On extrait uniquement les phrases qui correspondent à notre liste
+        serie_propre = df_non_scan['raison_scan'].apply(filtrer_motifs).explode()
         
-        # On compte les occurrences de chaque phrase entière
-        comptage = tous_les_motifs.value_counts()
+        # 5. COMPTAGE ET TRI
+        counts = serie_propre.value_counts()
         total_menages = len(df_non_scan)
 
-        # 5. CONSTRUCTION DU TABLEAU
         table_raison = []
-        for motif, effectif in comptage.items():
-            # On ignore les résidus de mots isolés s'il en reste (ex: "le", "la", "de")
-            # pour ne garder que les phrases avec du sens.
-            if len(str(motif)) > 5: 
+        for motif, effectif in counts.items():
+            if motif in motifs_officiels: # Double sécurité
                 pourcentage = (effectif / total_menages) * 100
                 table_raison.append([
                     str(motif), 
@@ -2603,9 +2599,12 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                     f"{pourcentage:.1f}%"
                 ])
 
-        # 6. GÉNÉRATION DANS LE RAPPORT
-        create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
-        
+        # 6. CRÉATION DU TABLEAU
+        if table_raison:
+            create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
+        else:
+            doc.add_paragraph("Aucun motif correspondant aux catégories officielles n'a été trouvé.")
+            
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
     # ========== CONCLUSION ==========
