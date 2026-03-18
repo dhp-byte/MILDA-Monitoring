@@ -1482,61 +1482,59 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
         st.markdown("Dossiers KMZ par Province et District")
         
         if st.button("🌍 Générer Pack ZIP", use_container_width=True):
-            # Détection des colonnes GPS
             lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
             lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
             
             if lat_col and lon_col:
-                with st.spinner("Organisation des dossiers..."):
-                    # Création du buffer pour le fichier ZIP final
+                with st.spinner("Organisation des dossiers et coloration des points..."):
                     zip_buffer = io.BytesIO()
                     
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        # On groupe les données par Province et District
-                        # On s'assure de supprimer les lignes sans coordonnées
                         df_geo = data.dropna(subset=[lat_col, lon_col])
-                        
                         grouped = df_geo.groupby(['province', 'district'])
                         
                         for (prov_name, dist_name), group in grouped:
                             kml = simplekml.Kml()
                             
                             for _, row in group.iterrows():
-                                # Création du point avec ID ménage
                                 name = f"Ménage_{row.get('id_menage', 'Inconnu')}"
                                 pnt = kml.newpoint(name=name)
                                 pnt.coords = [(row[lon_col], row[lat_col])]
                                 
-                                # Infos dans la bulle Google Earth
+                                # --- Coloration Logique ---
+                                is_servi = row.get('indic_servi') == 1
+                                # Couleur au format simplekml (AABBGGRR)
+                                # Vert : ff00ff00 | Rouge : ff0000ff
+                                pnt.style.iconstyle.color = 'ff00ff00' if is_servi else 'ff0000ff'
+                                pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png'
+                                
                                 pnt.description = f"""
                                 <b>Province:</b> {prov_name}<br>
                                 <b>District:</b> {dist_name}<br>
                                 <b>CS:</b> {row.get('centre_sante', 'N/A')}<br>
-                                <b>Statut Servi:</b> {'Oui' if row.get('indic_servi') == 1 else 'Non'}
+                                <b>Statut Servi:</b> {'OUI (Vert)' if is_servi else 'NON (Rouge)'}
                                 """
                             
-                            # Conversion du KML en KMZ (en mémoire)
-                            kmz_data = kml.get_kmz() 
+                            # Correction de l'erreur : Générer le contenu KML en string
+                            kml_content = kml.kml()
                             
-                            # Création du chemin de fichier dans le ZIP : Province/District.kmz
-                            # On nettoie les noms pour éviter les caractères interdits dans les dossiers
+                            # Création du chemin (Province/District.kml)
+                            # Note : On enregistre en .kml à l'intérieur du ZIP pour une lecture directe
                             clean_prov = str(prov_name).replace("/", "-")
                             clean_dist = str(dist_name).replace("/", "-")
-                            file_path = f"{clean_prov}/{clean_dist}.kmz"
+                            file_path = f"{clean_prov}/{clean_dist}.kml"
                             
-                            # Ajout au fichier ZIP
-                            zip_file.writestr(file_path, kmz_data)
+                            zip_file.writestr(file_path, kml_content)
 
-                    # Bouton de téléchargement du ZIP
                     st.download_button(
-                        label="⬇️ Télécharger ZIP (KMZ)",
+                        label="⬇️ Télécharger ZIP (KML)",
                         data=zip_buffer.getvalue(),
                         file_name=f"cartographie_milda_{datetime.now().strftime('%Y%m%d')}.zip",
                         mime="application/zip",
                         use_container_width=True
                     )
             else:
-                st.error("Colonnes GPS introuvables pour la cartographie.")
+                st.error("Colonnes GPS introuvables.")
                 
     st.markdown("---")
     
