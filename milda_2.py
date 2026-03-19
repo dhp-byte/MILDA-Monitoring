@@ -1557,7 +1557,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     # Calcul des métriques pour le rapport
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
     
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     # --- COLONNE 1 : EXCEL ---
     with col1:
@@ -1635,6 +1635,77 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
 
     # --- COLONNE 5 : RAPPORT VISUEL (WORD + STATICMAP) ---
     with col5:
+        st.subheader("📝 Visuels")
+        if st.button("🖼️ Rapport Word Villages", key="btn_word", use_container_width=True):
+            if not lat_col or not lon_col:
+                st.error("Coordonnées GPS manquantes pour les visuels.")
+            else:
+                # --- INITIALISATION DE LA BARRE DE PROGRESSION ---
+                districts = [d for d in data['district'].unique() if pd.notna(d)]
+                total_districts = len(districts)
+                
+                progress_bar = st.progress(0)
+                status_text = st.empty() # Zone de texte qui s'efface
+                
+                with st.spinner("Génération du rapport en cours..."):
+                    doc = Document()
+                    doc.add_heading('Suivi Visuel par Village - CDM 2026', level=0)
+                    doc.add_paragraph("Cartographie : OpenStreetMap Statique (Version Stable)").italic = True
+                    
+                    for idx, dist in enumerate(districts):
+                        # Mise à jour de la barre (0.0 à 1.0)
+                        current_progress = (idx + 1) / total_districts
+                        progress_bar.progress(current_progress)
+                        status_text.info(f"📍 District {idx + 1}/{total_districts} : **{dist}**")
+                        
+                        df_dist = data[data['district'] == dist]
+                        vils = [v for v in df_dist['village'].unique() if pd.notna(v)]
+                        
+                        # Sélection de 2 villages
+                        selected = random.sample(vils, min(2, len(vils)))
+                        
+                        doc.add_heading(f"District : {dist}", level=1)
+                        
+                        for vil_name in selected:
+                            df_vil = df_dist[df_dist['village'] == vil_name].dropna(subset=[lat_col, lon_col])
+                            
+                            if not df_vil.empty:
+                                doc.add_heading(f"Village : {vil_name}", level=2)
+                                try:
+                                    # Appel de votre fonction qui marche déjà
+                                    img_path = get_village_map_screenshot(df_vil, vil_name, lat_col, lon_col)
+                                    
+                                    if img_path and os.path.exists(img_path):
+                                        doc.add_picture(img_path, width=Inches(5.5))
+                                        
+                                        # Petite légende statistique sous l'image
+                                        total = len(df_vil)
+                                        servis = len(df_vil[df_vil['indic_servi'] == 1])
+                                        doc.add_paragraph(f"Village {vil_name} : {total} ménages audités ({servis} servis).")
+                                        
+                                        # Nettoyage immédiat
+                                        os.remove(img_path)
+                                except Exception as e:
+                                    doc.add_paragraph(f"⚠️ Erreur sur {vil_name} : {str(e)}")
+                                
+                                doc.add_page_break()
+                    
+                    # Préparation du téléchargement
+                    doc_io = io.BytesIO()
+                    doc.save(doc_io)
+                    
+                    # On efface la barre et le texte une fois fini
+                    progress_bar.empty()
+                    status_text.success("✅ Rapport Word prêt !")
+                    
+                    st.download_button(
+                        label="⬇️ Télécharger le Rapport",
+                        data=doc_io.getvalue(),
+                        file_name=f"Rapport_Visuel_MILDA_{datetime.now().strftime('%d_%m')}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True
+                    )
+    with col6:
         st.markdown("#### Visuels")
         if st.button("🖼️ Rapport Villages", key="btn_word", use_container_width=True):
             if not lat_col or not lon_col:
