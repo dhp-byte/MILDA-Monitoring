@@ -1422,22 +1422,76 @@ def page_statistics(data: pd.DataFrame):
             use_container_width=True
         )
 
-from docx import Document
-from docx.shared import Inches
+import folium
+import os
+import time
 import random
+import io
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+from docx.shared import Inches
 
-def generate_word_with_villages(data, doc):
-    """Génère le rapport Word avec focus sur des villages aléatoires"""
+def get_village_map_screenshot(df_village, village_name, lat_col, lon_col):
+    """Génère une carte Folium et en capture une image PNG"""
     
-    # On s'assure d'avoir les colonnes nécessaires
-    if 'district' not in data.columns or 'village' not in data.columns:
-        return doc
+    # 1. Calculer le centre du village
+    center_lat = df_village[lat_col].mean()
+    center_lon = df_village[lon_col].mean()
+    
+    # 2. Créer la carte Folium (Zoom 18-19 correspond à 300-500ft)
+    # Utilisation de l'imagerie satellite Esri (proche du rendu Airbus)
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=18,
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri, Airbus c 2026'
+    )
+    
+    # 3. Ajouter TOUS les points du village sur la carte
+    for _, row in df_village.iterrows():
+        color = 'green' if row.get('indic_servi') == 1 else 'red'
+        folium.CircleMarker(
+            location=[row[lat_col], row[lon_col]],
+            radius=5,
+            color=color,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.7,
+            popup=f"Ménage: {row.get('id_menage', 'ID Inconnu')}"
+        ).add_to(m)
+    
+    # 4. Sauvegarder temporairement en HTML
+    temp_html = f"temp_map_{village_name}.html"
+    temp_png = f"temp_map_{village_name}.png"
+    m.save(temp_html)
+    
+    # 5. Capture d'écran avec Selenium (headless)
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    driver = webdriver.Chrome(options=chrome_options)
+    
+    # Ajuster la fenêtre pour une belle image
+    driver.set_window_size(1000, 800)
+    driver.get(f"file://{os.path.abspath(temp_html)}")
+    time.sleep(2)  # Laisser le temps aux tuiles satellites de charger
+    driver.save_screenshot(temp_png)
+    driver.quit()
+    
+    # Nettoyage HTML
+    if os.path.exists(temp_html):
+        os.remove(temp_html)
+        
+    return temp_png
 
+def generate_visual_report(data, doc):
+    """Génère le rapport Word avec les vraies images satellites"""
+    
     lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
     lon_col = next((c for c in data.columns if 'lon' in c.lower()), None)
-
-    doc.add_heading('Zoom Cartographique par Village (Échantillonnage)', level=1)
-    doc.add_paragraph("Images satellites © 2026 Airbus | Zoom : 300ft - 500ft").italic = True
+    
+    doc.add_heading('Rapport de Suivi Géospatial - CDM 2026', level=1)
+    doc.add_paragraph("Images satellites © 2026 Airbus / Esri | Zoom : 300ft - 500ft").italic = True
 
     districts = data['district'].unique()
 
@@ -1445,45 +1499,34 @@ def generate_word_with_villages(data, doc):
         df_dist = data[data['district'] == dist]
         villages = df_dist['village'].unique()
         
-        # Déterminer un nombre raisonnable (ex: 10% des villages, min 1, max 5)
-        n_to_select = max(1, min(5, len(villages) // 10))
-        selected_villages = random.sample(list(villages), n_to_select)
+        # Sélection de 2 villages par district pour l'exemple
+        selected_villages = random.sample(list(villages), min(2, len(villages)))
         
-        doc.add_heading(f'District de {dist}', level=2)
+        doc.add_heading(f'District Sanitaire : {dist}', level=2)
 
         for vil in selected_villages:
             doc.add_heading(f'Village : {vil}', level=3)
             
-            # Récupérer le point central du village pour le zoom
             df_vil = df_dist[df_dist['village'] == vil].dropna(subset=[lat_col, lon_col])
             
             if not df_vil.empty:
-                center_lat = df_vil[lat_col].mean()
-                center_lon = df_vil[lon_col].mean()
-                
-                # Ici, vous inséreriez l'image si vous avez un service de capture
-                # Sinon, on prépare l'emplacement avec les coordonnées
-                p = doc.add_paragraph()
-                p.add_run(f"[IMAGE SATELLITE - Centre : {center_lat:.5f}, {center_lon:.5f}]").bold = True
-                
-                doc.add_paragraph(f"Nombre de ménages audités dans ce village : {len(df_vil)}")
-                
-                # Optionnel : Ajouter un petit tableau des ménages du village
-                table = doc.add_table(rows=1, cols=3)
-                table.style = 'Table Grid'
-                hdr_cells = table.rows[0].cells
-                hdr_cells[0].text = 'ID Ménage'
-                hdr_cells[1].text = 'Statut'
-                hdr_cells[2].text = 'Coordonnées'
-                
-                for _, row in df_vil.head(5).iterrows(): # Top 5 pour ne pas surcharger
-                    row_cells = table.add_row().cells
-                    row_cells[0].text = str(row.get('id_menage', ''))
-                    row_cells[1].text = 'Servi' if row.get('indic_servi') == 1 else 'Non servi'
-                    row_cells[2].text = f"{row[lat_col]:.4f}, {row[lon_col]:.4f}"
+                try:
+                    # Génération de la capture
+                    img_path = get_village_map_screenshot(df_vil, vil, lat_col, lon_col)
+                    
+                    # Insertion dans Word
+                    doc.add_picture(img_path, width=Inches(6))
+                    
+                    # Légende
+                    doc.add_paragraph(f"Répartition des {len(df_vil)} ménages audités à {vil} (Points verts = Servis, Rouges = Non servis)").italic = True
+                    
+                    # Nettoyage image
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
+                except Exception as e:
+                    doc.add_paragraph(f"[Erreur lors de la génération de l'image pour {vil} : {str(e)}]")
             
-            doc.add_paragraph("\n") # Espace entre villages
-
+            doc.add_page_break()
     return doc
 
 
