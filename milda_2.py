@@ -1541,6 +1541,138 @@ def generate_visual_report(data, doc):
     return doc
 
 def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
+    """Page d'export et de génération de rapports - Version Statique Stable"""
+    
+    st.markdown("## 📥 Export et Rapports")
+    
+    # --- 1. DÉTECTION GÉNÉRALE DES COLONNES GPS (CRITIQUE) ---
+    # On définit ces variables au début pour qu'elles soient visibles par toutes les colonnes
+    lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
+    lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
+    
+    st.markdown("### 📊 Options d'export")
+    
+    # Calcul des métriques pour le rapport
+    metrics = MetricsCalculator.calculate_coverage_metrics(data)
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    # --- COLONNE 1 : EXCEL ---
+    with col1:
+        st.markdown("#### Excel")
+        if st.button("📊 Générer Excel", key="btn_excel", use_container_width=True):
+            with st.spinner("Génération du rapport Excel..."):
+                excel_file = ReportGenerator.generate_excel_report(data, tables, metrics)
+                st.download_button(
+                    label="⬇️ Télécharger Excel",
+                    data=excel_file,
+                    file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+    
+    # --- COLONNE 2 : JSON ---
+    with col2:
+        st.markdown("#### JSON")
+        if st.button("📋 Générer JSON", key="btn_json", use_container_width=True):
+            json_report = ReportGenerator.generate_json_report(data, metrics)
+            st.download_button(
+                label="⬇️ Télécharger JSON",
+                data=json_report,
+                file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+    
+    # --- COLONNE 3 : CSV ---
+    with col3:
+        st.markdown("#### CSV")
+        csv_data = data.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="⬇️ Télécharger CSV",
+            data=csv_data,
+            file_name=f"donnees_milda_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    # --- COLONNE 4 : GOOGLE EARTH (ZIP/KML) ---
+    with col4:
+        st.markdown("#### Google Earth")
+        if st.button("🌍 Pack ZIP (KML)", key="btn_kml", use_container_width=True):
+            if lat_col and lon_col:
+                with st.spinner("Génération des fichiers KML..."):
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        df_geo = data.dropna(subset=[lat_col, lon_col])
+                        grouped = df_geo.groupby(['province', 'district'])
+                        
+                        for (prov_name, dist_name), group in grouped:
+                            kml = simplekml.Kml()
+                            for _, row in group.iterrows():
+                                pnt = kml.newpoint(name="") # Vide selon votre souhait
+                                pnt.coords = [(row[lon_col], row[lat_col])]
+                                is_servi = row.get('indic_servi') == 1
+                                pnt.style.iconstyle.color = 'ff00ff00' if is_servi else 'ff0000ff'
+                                pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png'
+                                pnt.description = f"ID: {row.get('id_menage')}<br>CS: {row.get('centre_sante')}"
+                            
+                            clean_prov = str(prov_name).replace("/", "-")
+                            clean_dist = str(dist_name).replace("/", "-")
+                            zip_file.writestr(f"{clean_prov}/{clean_dist}.kml", kml.kml())
+
+                    st.download_button(
+                        label="⬇️ Télécharger ZIP",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"cartographie_{datetime.now().strftime('%Y%m%d')}.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+            else:
+                st.error("Colonnes GPS introuvables.")
+
+    # --- COLONNE 5 : RAPPORT VISUEL (WORD + STATICMAP) ---
+    with col5:
+        st.markdown("#### Visuels")
+        if st.button("🖼️ Rapport Villages", key="btn_word", use_container_width=True):
+            if not lat_col or not lon_col:
+                st.error("Coordonnées GPS manquantes pour les visuels.")
+            else:
+                with st.spinner("Génération des cartes statiques..."):
+                    doc = Document()
+                    doc.add_heading('Suivi Visuel par Village - CDM 2026', level=0)
+                    doc.add_paragraph("Cartographie : OpenStreetMap Statique (Méthode Stable)").italic = True
+                    
+                    districts = [d for d in data['district'].unique() if pd.notna(d)]
+                    for dist in districts:
+                        df_dist = data[data['district'] == dist]
+                        vils = [v for v in df_dist['village'].unique() if pd.notna(v)]
+                        selected = random.sample(vils, min(2, len(vils)))
+                        
+                        doc.add_heading(f"District : {dist}", level=1)
+                        for vil_name in selected:
+                            df_vil = df_dist[df_dist['village'] == vil_name].dropna(subset=[lat_col, lon_col])
+                            if not df_vil.empty:
+                                doc.add_heading(f"Village : {vil_name}", level=2)
+                                try:
+                                    img_path = get_village_map_screenshot(df_vil, vil_name, lat_col, lon_col)
+                                    if img_path and os.path.exists(img_path):
+                                        doc.add_picture(img_path, width=Inches(5.5))
+                                        doc.add_paragraph(f"Analyse de {len(df_vil)} ménages.")
+                                        os.remove(img_path)
+                                except Exception as e:
+                                    doc.add_paragraph(f"Erreur image : {str(e)}")
+                                doc.add_page_break()
+                    
+                    doc_io = io.BytesIO()
+                    doc.save(doc_io)
+                    st.download_button("⬇️ Télécharger Word", doc_io.getvalue(), "Rapport_Villages.docx", use_container_width=True)
+
+    st.markdown("---")
+
+
+def page_export_a
+(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     """Page d'export et de génération de rapports"""
     
     st.markdown("## 📥 Export et Rapports")
