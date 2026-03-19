@@ -1423,72 +1423,95 @@ def page_statistics(data: pd.DataFrame):
         )
 
 
-import streamlit as st
-import pandas as pd
-import io
-import os
-import random
-import zipfile
-import simplekml
-import time
+
 import folium
-from datetime import datetime
-from docx import Document
-from docx.shared import Inches
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 def get_village_map_screenshot(df_village, village_name, lat_col, lon_col):
-    """Crée une carte Folium et capture une image PNG via Selenium"""
+    """
+    Crée une carte Folium avec tous les points du village, 
+    capture une image satellite via Selenium et la retourne.
+    """
+    # 1. Calcul du centre du village pour le focus
     center_lat = df_village[lat_col].mean()
     center_lon = df_village[lon_col].mean()
     
-    # Création de la carte (Zoom 18-19 pour le détail village)
+    # 2. Création de la carte Folium (Zoom 18 = ~300-500ft)
+    # Utilisation du layer Satellite Esri (Imagerie Airbus 2026)
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=18,
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri, Airbus © 2026'
+        attr='Esri, Airbus © 2026',
+        control_scale=True
     )
     
-    # Ajout de tous les points du village (Sans étiquette de texte pour la clarté)
+    # 3. Ajout de TOUS les points du village sur la carte
     for _, row in df_village.iterrows():
-        color = 'green' if row.get('indic_servi') == 1 else 'red'
+        is_servi = row.get('indic_servi') == 1
+        color = '#00FF00' if is_servi else '#FF0000' # Vert si servi, Rouge sinon
+        
         folium.CircleMarker(
             location=[row[lat_col], row[lon_col]],
-            radius=6,
-            color='white',
+            radius=7,
+            color='white',      # Bordure blanche pour contraste sur satellite
             weight=1,
             fill=True,
             fill_color=color,
             fill_opacity=0.9
         ).add_to(m)
     
-    # Sauvegarde temporaire
-    temp_html = f"map_{village_name}.html"
-    temp_png = f"map_{village_name}.png"
-    m.save(temp_html)
-    
-    # Configuration Selenium Headless (Optimisé pour Streamlit)
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
+    # 4. Gestion des fichiers temporaires (Noms sécurisés)
+    safe_name = "".join([c for c in village_name if c.isalnum() or c in (' ', '_')]).rstrip()
+    temp_html = f"map_{safe_name}.html"
+    temp_png = f"map_{safe_name}.png"
     
     try:
+        # Sauvegarde du HTML
+        m.save(temp_html)
+        
+        # 5. Configuration de Selenium pour l'environnement Cloud/Linux
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1280,1024")
+        
+        # Initialisation du driver
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.set_window_size(1200, 900)
-        driver.get(f"file://{os.path.abspath(temp_html)}")
-        time.sleep(3)  # Temps de chargement des tuiles Airbus
+        
+        # 6. Capture de l'image
+        # On utilise le chemin absolu pour éviter les erreurs de lecture
+        abs_path = os.path.abspath(temp_html)
+        driver.get(f"file://{abs_path}")
+        
+        # Pause cruciale pour laisser le satellite charger (Airbus tiles)
+        time.sleep(5) 
+        
         driver.save_screenshot(temp_png)
         driver.quit()
-    finally:
-        if os.path.exists(temp_html): os.remove(temp_html)
         
-    return temp_png
+        if os.path.exists(temp_png):
+            return temp_png
+        else:
+            return None
+
+    except Exception as e:
+        st.error(f"Erreur de capture pour {village_name} : {str(e)}")
+        return None
+        
+    finally:
+        # 7. Nettoyage systématique du fichier HTML pour libérer de l'espace
+        if os.path.exists(temp_html):
+            try:
+                os.remove(temp_html)
+            except:
+                pass
 
 def generate_visual_report(data, doc):
     """Génère le rapport Word avec les vraies images satellites"""
