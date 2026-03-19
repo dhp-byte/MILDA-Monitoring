@@ -1422,138 +1422,166 @@ def page_statistics(data: pd.DataFrame):
             use_container_width=True
         )
 
-
+import gc
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 def get_village_map_screenshot(df_village, village_name, lat_col, lon_col):
-    """Version DEBUG pour identifier le point de rupture"""
+    """Version optimisée pour éviter le crash 'Oh no' sur Streamlit Cloud"""
     
-    status = st.empty() # Zone de texte dynamique pour le suivi
+    # 1. Utilisation d'un conteneur de log discret
+    log = st.empty()
     
+    # Nettoyage du nom pour éviter les erreurs de fichiers
+    safe_name = "".join([c for c in village_name if c.isalnum()]).rstrip()
+    temp_html = f"map_{safe_name}.html"
+    temp_png = f"map_{safe_name}.png"
+
     try:
-        # --- ÉTAPE 1 : Préparation des données ---
-        status.info(f"🔍 [DEBUG] {village_name} : Calcul des coordonnées...")
+        log.text(f"⚙️ Préparation : {village_name}...")
         center_lat = df_village[lat_col].mean()
         center_lon = df_village[lon_col].mean()
         
-        # --- ÉTAPE 2 : Création Folium ---
-        status.info(f"🗺️ [DEBUG] {village_name} : Génération de la carte Folium...")
+        # Carte Folium simplifiée
         m = folium.Map(
             location=[center_lat, center_lon],
             zoom_start=18,
             tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            attr='Esri, Airbus © 2026'
+            attr='Airbus 2026',
+            zoom_control=False # Désactivé pour gagner de la place
         )
         
         for _, row in df_village.iterrows():
-            color = '#00FF00' if row.get('indic_servi') == 1 else '#FF0000'
             folium.CircleMarker(
                 location=[row[lat_col], row[lon_col]],
-                radius=6, color='white', weight=1, fill=True, fill_color=color, fill_opacity=0.9
+                radius=5, color='white', weight=1, 
+                fill=True, fill_color='#00FF00' if row.get('indic_servi') == 1 else '#FF0000', 
+                fill_opacity=0.9
             ).add_to(m)
 
-        # --- ÉTAPE 3 : Sauvegarde HTML ---
-        safe_name = "".join([c for c in village_name if c.isalnum()]).rstrip()
-        temp_html = f"debug_{safe_name}.html"
-        temp_png = f"debug_{safe_name}.png"
-        
-        status.info(f"💾 [DEBUG] {village_name} : Écriture du fichier HTML temporaire...")
         m.save(temp_html)
-        
-        # --- ÉTAPE 4 : Initialisation Selenium (ZONE CRITIQUE) ---
-        status.warning(f"🚀 [DEBUG] {village_name} : Lancement du moteur Chrome (Headless)...")
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        
-        # Forcer le binaire pour Streamlit Cloud
-        if os.path.exists("/usr/bin/chromium-browser"):
-            chrome_options.binary_location = "/usr/bin/chromium-browser"
-            status.write("✅ Binaire Chromium trouvé.")
 
+        # 2. Configuration Selenium 'Agressive' pour la RAM
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-extensions")
+        # RÉDUIRE LA RÉSOLUTION pour consommer moins de RAM
+        options.add_argument("--window-size=800,600") 
+        # Forcer l'utilisation du binaire système si présent
+        if os.path.exists("/usr/bin/chromium-browser"):
+            options.binary_location = "/usr/bin/chromium-browser"
+
+        log.text(f"🚀 Lancement Chrome : {village_name}...")
         service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver = webdriver.Chrome(service=service, options=options)
         
-        # --- ÉTAPE 5 : Chargement de la page ---
-        status.warning(f"🌐 [DEBUG] {village_name} : Chargement de l'URL locale...")
+        # 3. Timeout strict pour éviter les blocages
+        driver.set_page_load_timeout(30)
         abs_path = os.path.abspath(temp_html)
         driver.get(f"file://{abs_path}")
         
-        status.write("⏳ Attente du chargement des tuiles Airbus (5s)...")
-        time.sleep(5) 
-        
-        # --- ÉTAPE 6 : Capture d'écran ---
-        status.warning(f"📸 [DEBUG] {village_name} : Déclenchement de la capture PNG...")
+        log.text(f"📸 Capture : {village_name}...")
+        time.sleep(4) # Temps minimal pour le satellite
         driver.save_screenshot(temp_png)
         
-        # --- ÉTAPE 7 : Fermeture ---
-        status.write("🔌 Fermeture du driver Selenium...")
-        driver.quit()
+        # 4. FERMETURE CRITIQUE
+        driver.close() # Ferme l'onglet
+        driver.quit()  # Tue le processus
         
-        if os.path.exists(temp_png):
-            status.success(f"✔️ [DEBUG] {village_name} : Image générée avec succès.")
-            return temp_png
-        else:
-            st.error("❌ Image non générée après capture.")
-            return None
+        log.empty() # Efface le log si réussi
+        return temp_png
 
     except Exception as e:
-        st.error(f"💥 [CRASH DEBUG] Erreur fatale à {village_name} : {str(e)}")
+        st.error(f"Erreur sur {village_name}: {str(e)}")
         return None
-        
     finally:
-        # Nettoyage
+        # Nettoyage fichier HTML immédiat
         if os.path.exists(temp_html):
             os.remove(temp_html)
 
 def generate_visual_report(data, doc):
-    """Génère le rapport Word avec les vraies images satellites"""
-    
+    """
+    Génère le rapport Word avec captures satellites.
+    Optimisé pour la stabilité sur Streamlit Cloud.
+    """
+    # 1. Identification des colonnes GPS
     lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
-    lon_col = next((c for c in data.columns if 'lon' in c.lower()), None)
+    lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
     
-    doc.add_heading('Rapport de Suivi Géospatial - CDM 2026', level=1)
-    doc.add_paragraph("Images satellites © 2026 Airbus / Esri | Zoom : 300ft - 500ft").italic = True
+    if not lat_col or not lon_col:
+        st.error("Colonnes de coordonnées GPS introuvables dans le dataset.")
+        return doc
 
-    districts = data['district'].unique()
+    # 2. Entête du rapport
+    doc.add_heading('Rapport de Suivi Géospatial - CDM 2026', level=0)
+    doc.add_paragraph(f"Généré le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}").italic = True
+    doc.add_paragraph("Source : Imagerie Satellite © 2026 Airbus / Esri | Zoom : 300ft - 500ft").italic = True
+    
+    districts = [d for d in data['district'].unique() if pd.notna(d)]
+    
+    # 3. Barre de progression pour l'interface Streamlit
+    total_steps = len(districts)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
 
-    for dist in districts:
+    for idx, dist in enumerate(districts):
+        # Mise à jour de l'interface
+        progress = (idx + 1) / total_steps
+        progress_bar.progress(progress)
+        status_text.info(f"📍 Traitement du District : **{dist}** ({idx + 1}/{total_steps})")
+
         df_dist = data[data['district'] == dist]
-        villages = df_dist['village'].unique()
+        villages = [v for v in df_dist['village'].unique() if pd.notna(v)]
         
-        # Sélection de 2 villages par district pour l'exemple
+        # Sélection aléatoire : 2 villages par district pour préserver la RAM
         selected_villages = random.sample(list(villages), min(2, len(villages)))
         
-        doc.add_heading(f'District Sanitaire : {dist}', level=2)
+        doc.add_heading(f'District Sanitaire : {dist}', level=1)
 
         for vil in selected_villages:
-            doc.add_heading(f'Village : {vil}', level=3)
-            
             df_vil = df_dist[df_dist['village'] == vil].dropna(subset=[lat_col, lon_col])
             
             if not df_vil.empty:
+                doc.add_heading(f'Village : {vil}', level=2)
+                
                 try:
-                    # Génération de la capture
+                    # Appel de la fonction de capture (avec logs intégrés)
                     img_path = get_village_map_screenshot(df_vil, vil, lat_col, lon_col)
                     
-                    # Insertion dans Word
-                    doc.add_picture(img_path, width=Inches(6))
-                    
-                    # Légende
-                    doc.add_paragraph(f"Répartition des {len(df_vil)} ménages audités à {vil} (Points verts = Servis, Rouges = Non servis)").italic = True
-                    
-                    # Nettoyage image
-                    if os.path.exists(img_path):
+                    if img_path and os.path.exists(img_path):
+                        # Insertion de l'image
+                        doc.add_picture(img_path, width=Inches(5.8))
+                        
+                        # Légende détaillée
+                        nb_servi = len(df_vil[df_vil['indic_servi'] == 1])
+                        nb_non_servi = len(df_vil) - nb_servi
+                        caption = (f"Vue satellite de {vil}. Total ménages : {len(df_vil)} "
+                                   f"({nb_servi} servis [Vert], {nb_non_servi} non servis [Rouge]).")
+                        doc.add_paragraph(caption).italic = True
+                        
+                        # NETTOYAGE IMMÉDIAT DU FICHIER IMAGE
                         os.remove(img_path)
+                    else:
+                        doc.add_paragraph(f"[Image non disponible pour le village {vil}]").bold = True
+                
                 except Exception as e:
-                    doc.add_paragraph(f"[Erreur lors de la génération de l'image pour {vil} : {str(e)}]")
+                    doc.add_paragraph(f"⚠️ Erreur technique pour {vil} : {str(e)}")
             
+            # Saut de page après chaque village pour un rendu pro
             doc.add_page_break()
+        
+        # Forcer la libération de la mémoire après chaque district
+        gc.collect()
+
+    # Nettoyage final de l'interface
+    progress_bar.empty()
+    status_text.success("✅ Rapport visuel généré avec succès !")
+    
     return doc
 
 
