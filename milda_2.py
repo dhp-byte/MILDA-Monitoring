@@ -1671,8 +1671,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     st.markdown("---")
 
 
-def page_export_a
-(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
+def page_export_a(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     """Page d'export et de génération de rapports"""
     
     st.markdown("## 📥 Export et Rapports")
