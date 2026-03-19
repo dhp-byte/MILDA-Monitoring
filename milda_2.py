@@ -1422,6 +1422,70 @@ def page_statistics(data: pd.DataFrame):
             use_container_width=True
         )
 
+from docx import Document
+from docx.shared import Inches
+import random
+
+def generate_word_with_villages(data, doc):
+    """Génère le rapport Word avec focus sur des villages aléatoires"""
+    
+    # On s'assure d'avoir les colonnes nécessaires
+    if 'district' not in data.columns or 'village' not in data.columns:
+        return doc
+
+    lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
+    lon_col = next((c for c in data.columns if 'lon' in c.lower()), None)
+
+    doc.add_heading('Zoom Cartographique par Village (Échantillonnage)', level=1)
+    doc.add_paragraph("Images satellites © 2026 Airbus | Zoom : 300ft - 500ft").italic = True
+
+    districts = data['district'].unique()
+
+    for dist in districts:
+        df_dist = data[data['district'] == dist]
+        villages = df_dist['village'].unique()
+        
+        # Déterminer un nombre raisonnable (ex: 10% des villages, min 1, max 5)
+        n_to_select = max(1, min(5, len(villages) // 10))
+        selected_villages = random.sample(list(villages), n_to_select)
+        
+        doc.add_heading(f'District de {dist}', level=2)
+
+        for vil in selected_villages:
+            doc.add_heading(f'Village : {vil}', level=3)
+            
+            # Récupérer le point central du village pour le zoom
+            df_vil = df_dist[df_dist['village'] == vil].dropna(subset=[lat_col, lon_col])
+            
+            if not df_vil.empty:
+                center_lat = df_vil[lat_col].mean()
+                center_lon = df_vil[lon_col].mean()
+                
+                # Ici, vous inséreriez l'image si vous avez un service de capture
+                # Sinon, on prépare l'emplacement avec les coordonnées
+                p = doc.add_paragraph()
+                p.add_run(f"[IMAGE SATELLITE - Centre : {center_lat:.5f}, {center_lon:.5f}]").bold = True
+                
+                doc.add_paragraph(f"Nombre de ménages audités dans ce village : {len(df_vil)}")
+                
+                # Optionnel : Ajouter un petit tableau des ménages du village
+                table = doc.add_table(rows=1, cols=3)
+                table.style = 'Table Grid'
+                hdr_cells = table.rows[0].cells
+                hdr_cells[0].text = 'ID Ménage'
+                hdr_cells[1].text = 'Statut'
+                hdr_cells[2].text = 'Coordonnées'
+                
+                for _, row in df_vil.head(5).iterrows(): # Top 5 pour ne pas surcharger
+                    row_cells = table.add_row().cells
+                    row_cells[0].text = str(row.get('id_menage', ''))
+                    row_cells[1].text = 'Servi' if row.get('indic_servi') == 1 else 'Non servi'
+                    row_cells[2].text = f"{row[lat_col]:.4f}, {row[lon_col]:.4f}"
+            
+            doc.add_paragraph("\n") # Espace entre villages
+
+    return doc
+
 
 def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     """Page d'export et de génération de rapports"""
@@ -1433,7 +1497,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     # Calcul des métriques pour le rapport
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
         st.markdown("#### Excel")
@@ -1536,6 +1600,26 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
             else:
                 st.error("Colonnes GPS introuvables.")
                 
+
+    with col5: # Ou une nouvelle colonne
+    st.markdown("#### Rapport Visuel")
+    if st.button("📝 Rapport Villages (Word)", use_container_width=True):
+        with st.spinner("Sélection des villages et génération du rapport..."):
+            doc = Document()
+            # On appelle la fonction de génération
+            doc = generate_word_with_villages(data, doc)
+            
+            # Sauvegarde
+            bio = io.BytesIO()
+            doc.save(bio)
+            
+            st.download_button(
+                label="⬇️ Télécharger Rapport Visuel",
+                data=bio.getvalue(),
+                file_name=f"rapport_villages_{datetime.now().strftime('%Y%m%d')}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
     st.markdown("---")
     
     # Prévisualisation du contenu
