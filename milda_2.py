@@ -1602,24 +1602,24 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                 
 
     with col5: # Ou une nouvelle colonne
-    st.markdown("#### Rapport Visuel")
-    if st.button("📝 Rapport Villages (Word)", use_container_width=True):
-        with st.spinner("Sélection des villages et génération du rapport..."):
-            doc = Document()
-            # On appelle la fonction de génération
-            doc = generate_word_with_villages(data, doc)
-            
-            # Sauvegarde
-            bio = io.BytesIO()
-            doc.save(bio)
-            
-            st.download_button(
-                label="⬇️ Télécharger Rapport Visuel",
-                data=bio.getvalue(),
-                file_name=f"rapport_villages_{datetime.now().strftime('%Y%m%d')}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
+        st.markdown("#### Rapport Visuel")
+        if st.button("📝 Rapport Villages (Word)", use_container_width=True):
+            with st.spinner("Sélection des villages et génération du rapport..."):
+                doc = Document()
+                # On appelle la fonction de génération
+                doc = generate_word_with_villages(data, doc)
+                
+                # Sauvegarde
+                bio = io.BytesIO()
+                doc.save(bio)
+                
+                st.download_button(
+                    label="⬇️ Télécharger Rapport Visuel",
+                    data=bio.getvalue(),
+                    file_name=f"rapport_villages_{datetime.now().strftime('%Y%m%d')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
     st.markdown("---")
     
     # Prévisualisation du contenu
