@@ -19,6 +19,7 @@ import simplekml
 import random
 from datetime import datetime, timedelta
 import io
+import os
 import zipfile
 import re
 import math
