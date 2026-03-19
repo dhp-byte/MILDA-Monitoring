@@ -1423,95 +1423,93 @@ def page_statistics(data: pd.DataFrame):
         )
 
 
-
-import folium
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 def get_village_map_screenshot(df_village, village_name, lat_col, lon_col):
-    """
-    Crée une carte Folium avec tous les points du village, 
-    capture une image satellite via Selenium et la retourne.
-    """
-    # 1. Calcul du centre du village pour le focus
-    center_lat = df_village[lat_col].mean()
-    center_lon = df_village[lon_col].mean()
+    """Version DEBUG pour identifier le point de rupture"""
     
-    # 2. Création de la carte Folium (Zoom 18 = ~300-500ft)
-    # Utilisation du layer Satellite Esri (Imagerie Airbus 2026)
-    m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=18,
-        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri, Airbus © 2026',
-        control_scale=True
-    )
-    
-    # 3. Ajout de TOUS les points du village sur la carte
-    for _, row in df_village.iterrows():
-        is_servi = row.get('indic_servi') == 1
-        color = '#00FF00' if is_servi else '#FF0000' # Vert si servi, Rouge sinon
-        
-        folium.CircleMarker(
-            location=[row[lat_col], row[lon_col]],
-            radius=7,
-            color='white',      # Bordure blanche pour contraste sur satellite
-            weight=1,
-            fill=True,
-            fill_color=color,
-            fill_opacity=0.9
-        ).add_to(m)
-    
-    # 4. Gestion des fichiers temporaires (Noms sécurisés)
-    safe_name = "".join([c for c in village_name if c.isalnum() or c in (' ', '_')]).rstrip()
-    temp_html = f"map_{safe_name}.html"
-    temp_png = f"map_{safe_name}.png"
+    status = st.empty() # Zone de texte dynamique pour le suivi
     
     try:
-        # Sauvegarde du HTML
+        # --- ÉTAPE 1 : Préparation des données ---
+        status.info(f"🔍 [DEBUG] {village_name} : Calcul des coordonnées...")
+        center_lat = df_village[lat_col].mean()
+        center_lon = df_village[lon_col].mean()
+        
+        # --- ÉTAPE 2 : Création Folium ---
+        status.info(f"🗺️ [DEBUG] {village_name} : Génération de la carte Folium...")
+        m = folium.Map(
+            location=[center_lat, center_lon],
+            zoom_start=18,
+            tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            attr='Esri, Airbus © 2026'
+        )
+        
+        for _, row in df_village.iterrows():
+            color = '#00FF00' if row.get('indic_servi') == 1 else '#FF0000'
+            folium.CircleMarker(
+                location=[row[lat_col], row[lon_col]],
+                radius=6, color='white', weight=1, fill=True, fill_color=color, fill_opacity=0.9
+            ).add_to(m)
+
+        # --- ÉTAPE 3 : Sauvegarde HTML ---
+        safe_name = "".join([c for c in village_name if c.isalnum()]).rstrip()
+        temp_html = f"debug_{safe_name}.html"
+        temp_png = f"debug_{safe_name}.png"
+        
+        status.info(f"💾 [DEBUG] {village_name} : Écriture du fichier HTML temporaire...")
         m.save(temp_html)
         
-        # 5. Configuration de Selenium pour l'environnement Cloud/Linux
+        # --- ÉTAPE 4 : Initialisation Selenium (ZONE CRITIQUE) ---
+        status.warning(f"🚀 [DEBUG] {village_name} : Lancement du moteur Chrome (Headless)...")
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1280,1024")
         
-        # Initialisation du driver
+        # Forcer le binaire pour Streamlit Cloud
+        if os.path.exists("/usr/bin/chromium-browser"):
+            chrome_options.binary_location = "/usr/bin/chromium-browser"
+            status.write("✅ Binaire Chromium trouvé.")
+
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        # 6. Capture de l'image
-        # On utilise le chemin absolu pour éviter les erreurs de lecture
+        # --- ÉTAPE 5 : Chargement de la page ---
+        status.warning(f"🌐 [DEBUG] {village_name} : Chargement de l'URL locale...")
         abs_path = os.path.abspath(temp_html)
         driver.get(f"file://{abs_path}")
         
-        # Pause cruciale pour laisser le satellite charger (Airbus tiles)
+        status.write("⏳ Attente du chargement des tuiles Airbus (5s)...")
         time.sleep(5) 
         
+        # --- ÉTAPE 6 : Capture d'écran ---
+        status.warning(f"📸 [DEBUG] {village_name} : Déclenchement de la capture PNG...")
         driver.save_screenshot(temp_png)
+        
+        # --- ÉTAPE 7 : Fermeture ---
+        status.write("🔌 Fermeture du driver Selenium...")
         driver.quit()
         
         if os.path.exists(temp_png):
+            status.success(f"✔️ [DEBUG] {village_name} : Image générée avec succès.")
             return temp_png
         else:
+            st.error("❌ Image non générée après capture.")
             return None
 
     except Exception as e:
-        st.error(f"Erreur de capture pour {village_name} : {str(e)}")
+        st.error(f"💥 [CRASH DEBUG] Erreur fatale à {village_name} : {str(e)}")
         return None
         
     finally:
-        # 7. Nettoyage systématique du fichier HTML pour libérer de l'espace
+        # Nettoyage
         if os.path.exists(temp_html):
-            try:
-                os.remove(temp_html)
-            except:
-                pass
+            os.remove(temp_html)
 
 def generate_visual_report(data, doc):
     """Génère le rapport Word avec les vraies images satellites"""
