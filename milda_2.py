@@ -1422,65 +1422,71 @@ def page_statistics(data: pd.DataFrame):
             use_container_width=True
         )
 
-import folium
-import os
-import time
-import random
+
+import streamlit as st
+import pandas as pd
 import io
+import os
+import random
+import zipfile
+import simplekml
+import time
+import folium
+from datetime import datetime
+from docx import Document
+from docx.shared import Inches
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from docx.shared import Inches
 
 def get_village_map_screenshot(df_village, village_name, lat_col, lon_col):
-    """Génère une carte Folium et en capture une image PNG"""
-    
-    # 1. Calculer le centre du village
+    """Crée une carte Folium et capture une image PNG via Selenium"""
     center_lat = df_village[lat_col].mean()
     center_lon = df_village[lon_col].mean()
     
-    # 2. Créer la carte Folium (Zoom 18-19 correspond à 300-500ft)
-    # Utilisation de l'imagerie satellite Esri (proche du rendu Airbus)
+    # Création de la carte (Zoom 18-19 pour le détail village)
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=18,
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri, Airbus c 2026'
+        attr='Esri, Airbus © 2026'
     )
     
-    # 3. Ajouter TOUS les points du village sur la carte
+    # Ajout de tous les points du village (Sans étiquette de texte pour la clarté)
     for _, row in df_village.iterrows():
         color = 'green' if row.get('indic_servi') == 1 else 'red'
         folium.CircleMarker(
             location=[row[lat_col], row[lon_col]],
-            radius=5,
-            color=color,
+            radius=6,
+            color='white',
+            weight=1,
             fill=True,
             fill_color=color,
-            fill_opacity=0.7,
-            popup=f"Ménage: {row.get('id_menage', 'ID Inconnu')}"
+            fill_opacity=0.9
         ).add_to(m)
     
-    # 4. Sauvegarder temporairement en HTML
-    temp_html = f"temp_map_{village_name}.html"
-    temp_png = f"temp_map_{village_name}.png"
+    # Sauvegarde temporaire
+    temp_html = f"map_{village_name}.html"
+    temp_png = f"map_{village_name}.png"
     m.save(temp_html)
     
-    # 5. Capture d'écran avec Selenium (headless)
+    # Configuration Selenium Headless (Optimisé pour Streamlit)
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    driver = webdriver.Chrome(options=chrome_options)
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
     
-    # Ajuster la fenêtre pour une belle image
-    driver.set_window_size(1000, 800)
-    driver.get(f"file://{os.path.abspath(temp_html)}")
-    time.sleep(2)  # Laisser le temps aux tuiles satellites de charger
-    driver.save_screenshot(temp_png)
-    driver.quit()
-    
-    # Nettoyage HTML
-    if os.path.exists(temp_html):
-        os.remove(temp_html)
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver.set_window_size(1200, 900)
+        driver.get(f"file://{os.path.abspath(temp_html)}")
+        time.sleep(3)  # Temps de chargement des tuiles Airbus
+        driver.save_screenshot(temp_png)
+        driver.quit()
+    finally:
+        if os.path.exists(temp_html): os.remove(temp_html)
         
     return temp_png
 
@@ -1644,25 +1650,41 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                 st.error("Colonnes GPS introuvables.")
                 
 
-    with col5: # Ou une nouvelle colonne
-        st.markdown("#### Rapport Visuel")
-        if st.button("📝 Rapport Villages (Word)", use_container_width=True):
-            with st.spinner("Sélection des villages et génération du rapport..."):
-                doc = Document()
-                # On appelle la fonction de génération
-                doc = generate_word_with_villages(data, doc)
-                
-                # Sauvegarde
-                bio = io.BytesIO()
-                doc.save(bio)
-                
-                st.download_button(
-                    label="⬇️ Télécharger Rapport Visuel",
-                    data=bio.getvalue(),
-                    file_name=f"rapport_villages_{datetime.now().strftime('%Y%m%d')}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True
-                )
+    with col5:
+        st.subheader("📝 Visuels")
+        if st.button("🖼️ Rapport Word Villages", use_container_width=True):
+            if not lat_col or not lon_col:
+                st.error("Coordonnées GPS manquantes.")
+            else:
+                with st.spinner("Captures satellites en cours..."):
+                    doc = Document()
+                    doc.add_heading('Suivi Visuel par Village - CDM 2026', level=0)
+                    doc.add_paragraph("Images © 2026 Airbus | Échelle : 300-500ft").italic = True
+                    
+                    # Sélection aléatoire par District
+                    for dist in data['district'].unique():
+                        df_dist = data[data['district'] == dist]
+                        vils = df_dist['village'].unique()
+                        # On prend max 2 villages par district pour ne pas saturer le rapport
+                        selected = random.sample(list(vils), min(2, len(vils)))
+                        
+                        for vil_name in selected:
+                            df_vil = df_dist[df_dist['village'] == vil_name].dropna(subset=[lat_col, lon_col])
+                            if not df_vil.empty:
+                                doc.add_heading(f"District : {dist} | Village : {vil_name}", level=2)
+                                try:
+                                    img_path = get_village_map_screenshot(df_vil, vil_name, lat_col, lon_col)
+                                    doc.add_picture(img_path, width=Inches(5.8))
+                                    doc.add_paragraph(f"Analyse de {len(df_vil)} points de collecte.")
+                                    if os.path.exists(img_path): os.remove(img_path)
+                                except Exception as e:
+                                    doc.add_paragraph(f"Erreur d'image : {str(e)}")
+                                doc.add_page_break()
+                    
+                    # Export du Word
+                    doc_io = io.BytesIO()
+                    doc.save(doc_io)
+                    st.download_button("⬇️ Télécharger Word", doc_io.getvalue(), "Rapport_Villages.docx", use_container_width=True)
     st.markdown("---")
     
     # Prévisualisation du contenu
