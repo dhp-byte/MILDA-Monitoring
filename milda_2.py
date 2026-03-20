@@ -1432,7 +1432,7 @@ def get_village_map_screenshot(df_village, village_name, lat_col, lon_col):
     Génère une image statique du village SANS Selenium.
     Ultra-léger pour Streamlit Cloud.
     """
-    st.text(f"📸 Génération statique : {village_name}...")
+    #st.text(f"📸 Génération statique : {village_name}...")
     
     # Nom du fichier image temporaire
     safe_name = "".join([c for c in village_name if c.isalnum()]).rstrip()
@@ -1655,7 +1655,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                     for idx, dist in enumerate(districts):
                         progression = (idx + 1) / total_dist
                         progress_bar.progress(progression)
-                        #status_text.info(f"📍 District {idx+1}/{total_dist} : **{dist}**")
+                        status_text.info(f"📍 District {idx+1}/{total_dist} : **{dist}**")
                         
                         df_dist = data[data['district'] == dist]
                         
