@@ -1655,7 +1655,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                     for idx, dist in enumerate(districts):
                         progression = (idx + 1) / total_dist
                         progress_bar.progress(progression)
-                        status_text.info(f"📍 District {idx+1}/{total_dist} : **{dist}**")
+                        #status_text.info(f"📍 District {idx+1}/{total_dist} : **{dist}**")
                         
                         df_dist = data[data['district'] == dist]
                         
@@ -1663,7 +1663,7 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                         # On compte le nombre de ménages par village
                         counts = df_dist['village'].value_counts()
                         # On ne garde que les noms de villages qui apparaissent plus d'une fois
-                        vils_eligibles = counts[counts > 1].index.tolist()
+                        vils_eligibles = counts[counts > 10].index.tolist()
                         # On s'assure qu'ils ne sont pas nuls
                         vils_eligibles = [v for v in vils_eligibles if pd.notna(v)]
                         
@@ -1711,160 +1711,6 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     
 
     st.markdown("---")
-
-
-def page_export_a(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
-    """Page d'export et de génération de rapports"""
-    
-    st.markdown("## 📥 Export et Rapports")
-    
-    st.markdown("### 📊 Options d'export")
-    
-    # Calcul des métriques pour le rapport
-    metrics = MetricsCalculator.calculate_coverage_metrics(data)
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.markdown("#### Excel")
-        st.markdown("Export complet avec toutes les analyses")
-        
-        if st.button("📊 Générer Excel", use_container_width=True):
-            with st.spinner("Génération du rapport Excel..."):
-                excel_file = ReportGenerator.generate_excel_report(data, tables, metrics)
-                st.download_button(
-                    label="⬇️ Télécharger Excel",
-                    data=excel_file,
-                    file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-    
-    with col2:
-        st.markdown("#### JSON")
-        st.markdown("Format structuré pour intégrations")
-        
-        if st.button("📋 Générer JSON", use_container_width=True):
-            json_report = ReportGenerator.generate_json_report(data, metrics)
-            st.download_button(
-                label="⬇️ Télécharger JSON",
-                data=json_report,
-                file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json",
-                use_container_width=True
-            )
-    
-    with col3:
-        st.markdown("#### CSV")
-        st.markdown("Données brutes pour traitement externe")
-        
-        csv_data = data.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="⬇️ Télécharger CSV",
-            data=csv_data,
-            file_name=f"donnees_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-
-    with col4:
-        st.markdown("#### Google Earth (ZIP)")
-        st.markdown("Dossiers KMZ par Province et District")
-        
-        if st.button("🌍 Générer Pack ZIP", use_container_width=True):
-            lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
-            lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
-            
-            if lat_col and lon_col:
-                with st.spinner("Organisation des dossiers et coloration des points..."):
-                    zip_buffer = io.BytesIO()
-                    
-                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                        df_geo = data.dropna(subset=[lat_col, lon_col])
-                        grouped = df_geo.groupby(['province', 'district'])
-                        
-                        for (prov_name, dist_name), group in grouped:
-                            kml = simplekml.Kml()
-                            
-                            for _, row in group.iterrows():
-                                name = "" #f"Ménage_{row.get('id_menage', 'Inconnu')}"
-                                pnt = kml.newpoint(name=name)
-                                pnt.coords = [(row[lon_col], row[lat_col])]
-                                
-                                # --- Coloration Logique ---
-                                is_servi = row.get('indic_servi') == 1
-                                # Couleur au format simplekml (AABBGGRR)
-                                # Vert : ff00ff00 | Rouge : ff0000ff
-                                pnt.style.iconstyle.color = 'ff00ff00' if is_servi else 'ff0000ff'
-                                pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png'
-                                
-                                pnt.description = f"""
-                                <b>Province:</b> {prov_name}<br>
-                                <b>District:</b> {dist_name}<br>
-                                <b>CS:</b> {row.get('centre_sante', 'N/A')}<br>
-                                <b>Statut Servi:</b> {'OUI (Vert)' if is_servi else 'NON (Rouge)'}
-                                """
-                            
-                            # Correction de l'erreur : Générer le contenu KML en string
-                            kml_content = kml.kml()
-                            
-                            # Création du chemin (Province/District.kml)
-                            # Note : On enregistre en .kml à l'intérieur du ZIP pour une lecture directe
-                            clean_prov = str(prov_name).replace("/", "-")
-                            clean_dist = str(dist_name).replace("/", "-")
-                            file_path = f"{clean_prov}/{clean_dist}.kml"
-                            
-                            zip_file.writestr(file_path, kml_content)
-
-                    st.download_button(
-                        label="⬇️ Télécharger ZIP (KML)",
-                        data=zip_buffer.getvalue(),
-                        file_name=f"cartographie_milda_{datetime.now().strftime('%Y%m%d')}.zip",
-                        mime="application/zip",
-                        use_container_width=True
-                    )
-            else:
-                st.error("Colonnes GPS introuvables.")
-                
-
-    with col5:
-        st.subheader("📝 Visuels")
-        if st.button("🖼️ Rapport Word Villages", use_container_width=True):
-            if not lat_col or not lon_col:
-                st.error("Coordonnées GPS manquantes.")
-            else:
-                with st.spinner("Captures satellites en cours..."):
-                    doc = Document()
-                    doc.add_heading('Suivi Visuel par Village - CDM 2026', level=0)
-                    doc.add_paragraph("Images © 2026 Airbus | Échelle : 300-500ft").italic = True
-                    
-                    # Sélection aléatoire par District
-                    for dist in data['district'].unique():
-                        df_dist = data[data['district'] == dist]
-                        vils = df_dist['village'].unique()
-                        # On prend max 2 villages par district pour ne pas saturer le rapport
-                        selected = random.sample(list(vils), min(2, len(vils)))
-                        
-                        for vil_name in selected:
-                            df_vil = df_dist[df_dist['village'] == vil_name].dropna(subset=[lat_col, lon_col])
-                            if not df_vil.empty:
-                                doc.add_heading(f"District : {dist} | Village : {vil_name}", level=2)
-                                try:
-                                    img_path = get_village_map_screenshot(df_vil, vil_name, lat_col, lon_col)
-                                    doc.add_picture(img_path, width=Inches(5.8))
-                                    doc.add_paragraph(f"Analyse de {len(df_vil)} points de collecte.")
-                                    if os.path.exists(img_path): os.remove(img_path)
-                                except Exception as e:
-                                    doc.add_paragraph(f"Erreur d'image : {str(e)}")
-                                doc.add_page_break()
-                    
-                    # Export du Word
-                    doc_io = io.BytesIO()
-                    doc.save(doc_io)
-                    st.download_button("⬇️ Télécharger Word", doc_io.getvalue(), "Rapport_Villages.docx", use_container_width=True)
-    st.markdown("---")
-    
-    # Prévisualisation du contenu
     st.markdown("### 👁️ Prévisualisation des données")
     
     preview_option = st.selectbox(
@@ -1886,6 +1732,7 @@ def page_export_a(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     summary_df = pd.DataFrame([metrics]).T
     summary_df.columns = ['Valeur']
     st.dataframe(summary_df, use_container_width=True)
+
 
 import io
 
