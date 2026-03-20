@@ -1640,30 +1640,38 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
             if not lat_col or not lon_col:
                 st.error("Coordonnées GPS manquantes pour les visuels.")
             else:
-                # --- INITIALISATION DES ÉLÉMENTS DE PROGRESSION ---
+                # --- INITIALISATION ---
                 districts = [d for d in data['district'].unique() if pd.notna(d)]
                 total_dist = len(districts)
                 
-                # On crée les placeholders pour la barre et le texte
                 progress_bar = st.progress(0)
                 status_text = st.empty() 
                 
                 with st.spinner("Génération des cartes statiques..."):
                     doc = Document()
                     doc.add_heading('Suivi Visuel par Village - CDM 2026', level=0)
-                    doc.add_paragraph("Cartographie : OpenStreetMap Statique (Méthode Stable)").italic = True
+                    doc.add_paragraph("Cartographie : OpenStreetMap Statique | Villages > 1 ménage").italic = True
                     
                     for idx, dist in enumerate(districts):
-                        # Mise à jour de la barre et du texte
                         progression = (idx + 1) / total_dist
                         progress_bar.progress(progression)
-                        status_text.info(f"📍 Traitement du district {idx+1}/{total_dist} : **{dist}**")
+                        status_text.info(f"📍 District {idx+1}/{total_dist} : **{dist}**")
                         
                         df_dist = data[data['district'] == dist]
-                        vils = [v for v in df_dist['village'].unique() if pd.notna(v)]
                         
-                        # Sélection aléatoire de 2 villages
-                        selected = random.sample(vils, min(2, len(vils)))
+                        # --- FILTRAGE DES VILLAGES DE TAILLE > 1 ---
+                        # On compte le nombre de ménages par village
+                        counts = df_dist['village'].value_counts()
+                        # On ne garde que les noms de villages qui apparaissent plus d'une fois
+                        vils_eligibles = counts[counts > 1].index.tolist()
+                        # On s'assure qu'ils ne sont pas nuls
+                        vils_eligibles = [v for v in vils_eligibles if pd.notna(v)]
+                        
+                        if not vils_eligibles:
+                            continue # Passer au district suivant si aucun village n'est assez grand
+                        
+                        # Sélection aléatoire parmi les villages éligibles
+                        selected = random.sample(vils_eligibles, min(2, len(vils_eligibles)))
                         
                         doc.add_heading(f"District : {dist}", level=1)
                         
@@ -1673,30 +1681,25 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                             if not df_vil.empty:
                                 doc.add_heading(f"Village : {vil_name}", level=2)
                                 try:
-                                    # Appel de votre fonction de capture
                                     img_path = get_village_map_screenshot(df_vil, vil_name, lat_col, lon_col)
                                     
                                     if img_path and os.path.exists(img_path):
                                         doc.add_picture(img_path, width=Inches(5.5))
                                         
-                                        # Calcul rapide des servis pour la légende
                                         servis = len(df_vil[df_vil['indic_servi'] == 1])
                                         doc.add_paragraph(f"Analyse de {len(df_vil)} ménages à {vil_name} (Servis : {servis}).")
                                         
-                                        # Nettoyage immédiat
                                         os.remove(img_path)
                                 except Exception as e:
                                     doc.add_paragraph(f"Erreur image pour {vil_name} : {str(e)}")
                                 
                                 doc.add_page_break()
                     
-                    # Préparation de l'export
                     doc_io = io.BytesIO()
                     doc.save(doc_io)
                     
-                    # Nettoyage final des indicateurs de progression
                     progress_bar.empty()
-                    status_text.success(f"✅ Rapport généré avec succès pour {total_dist} districts !")
+                    status_text.success(f"✅ Rapport généré !")
                     
                     st.download_button(
                         label="⬇️ Télécharger Word", 
