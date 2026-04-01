@@ -1745,15 +1745,15 @@ import io
 
 def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
-    
+
     df_track = data.copy()
 
-    # Identification des colonnes
+    # --- Identification des colonnes ---
     start_col = 'start' if 'start' in df_track.columns else 'S0Q01_start'
-    end_col = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
-    date_col = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
+    end_col   = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
+    date_col  = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
 
-    # ---------- HELPERS DE CONVERSION LIGNE PAR LIGNE ----------
+    # ---------- HELPERS ----------
     def parse_single_datetime(val):
         if pd.isna(val) or str(val).strip().lower() in ['nan', 'none', 'nat', '']:
             return pd.NaT
@@ -1763,32 +1763,33 @@ def page_agent_tracking(data: pd.DataFrame):
         raw_val = str(row[target_col]).strip()
         if raw_val.lower() in ['nan', 'none', 'nat', '']:
             return pd.NaT
-        
-        # Si datetime complète
         if '-' in raw_val or '/' in raw_val:
             return parse_single_datetime(raw_val)
-        
-        # Si heure seule
         date_part = str(row[date_col]).split(' ')[0]
         try:
             return pd.to_datetime(f"{date_part} {raw_val}", errors='coerce', dayfirst=True)
         except:
             return pd.NaT
 
-    # 1) Filtres (4 colonnes)
+    def safe_dt_series(series):
+        """Force une Series issue de apply() en datetime64[ns] propre."""
+        return pd.to_datetime(series, errors='coerce', utc=False)
+
+    # ── 1. FILTRES ───────────────────────────────────────────────────────────
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+
     with col_f1:
         prov_list = ["Toutes"] + sorted(df_track['province'].dropna().unique().tolist())
         sel_prov = st.selectbox("📍 Province", prov_list)
         if sel_prov != "Toutes":
             df_track = df_track[df_track['province'] == sel_prov]
-    
+
     with col_f2:
         dist_list = ["Tous"] + sorted(df_track['district'].dropna().unique().tolist())
         sel_dist = st.selectbox("🏙️ District", dist_list)
         if sel_dist != "Tous":
             df_track = df_track[df_track['district'] == sel_dist]
-            
+
     with col_f3:
         vill_list = ["Tous"] + sorted(df_track['village'].dropna().unique().tolist())
         sel_vill = st.selectbox("🏡 Village", vill_list)
@@ -1796,85 +1797,113 @@ def page_agent_tracking(data: pd.DataFrame):
             df_track = df_track[df_track['village'] == sel_vill]
 
     with col_f4:
-        # Conversion pour le calendrier
         t_dates = df_track[date_col].apply(parse_single_datetime).dropna()
         min_d = t_dates.min().date() if not t_dates.empty else datetime.now().date()
         max_d = t_dates.max().date() if not t_dates.empty else datetime.now().date()
         sel_date = st.date_input("📅 Date", value=(min_d, max_d))
-        
+
         if isinstance(sel_date, tuple) and len(sel_date) == 2:
             df_track['temp_day'] = df_track[date_col].apply(parse_single_datetime).dt.date
-            df_track = df_track[(df_track['temp_day'] >= sel_date[0]) & (df_track['temp_day'] <= sel_date[1])]
+            df_track = df_track[
+                (df_track['temp_day'] >= sel_date[0]) &
+                (df_track['temp_day'] <= sel_date[1])
+            ]
 
-    # 2) Calcul des Durées avec PROTECTION .dt
-    if not df_track.empty:
-        # Conversion ligne par ligne
-        df_track['start_dt'] = df_track.apply(lambda r: combine_date_time(r, start_col), axis=1)
-        df_track['end_dt'] = df_track.apply(lambda r: combine_date_time(r, end_col), axis=1)
-        
-        # --- LA CORRECTION DE L'ERREUR ATTRIBUTERROR ICI ---
-        # 1. On calcule la différence
-        diff = df_track['end_dt'] - df_track['start_dt']
-        # 2. On force le type Timedelta explicitement
-        diff_td = pd.to_timedelta(diff, errors='coerce')
-        # 3. On extrait les secondes seulement sur les valeurs valides
-        df_track['Duree_min'] = diff_td.dt.total_seconds() / 60
-        # Nettoyage des valeurs aberrantes
-        df_track.loc[df_track['Duree_min'] < 0, 'Duree_min'] = np.nan
+    if df_track.empty:
+        st.warning("Aucune donnée pour cette sélection.")
+        return
+
+    # ── 2. CONVERSION DATETIME (sécurisée) ───────────────────────────────────
+    df_track['start_dt'] = safe_dt_series(
+        df_track.apply(lambda r: combine_date_time(r, start_col), axis=1)
+    )
+    df_track['end_dt'] = safe_dt_series(
+        df_track.apply(lambda r: combine_date_time(r, end_col), axis=1)
+    )
+
+    # ── 3. DURÉES ─────────────────────────────────────────────────────────────
+    diff_td = pd.to_timedelta(df_track['end_dt'] - df_track['start_dt'], errors='coerce')
+    df_track['Duree_min'] = diff_td.dt.total_seconds() / 60
+    df_track.loc[df_track['Duree_min'] < 0, 'Duree_min'] = np.nan
+
+    # ── 4. CARTE ──────────────────────────────────────────────────────────────
+    df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name', 'end_dt']).copy()
+
+    if df_map.empty:
+        st.warning("Aucune donnée GPS exploitable pour cette sélection.")
     else:
-        df_track['Duree_min'] = np.nan
+        # Garantie finale : end_dt est bien datetime avant .dt
+        df_map['end_dt'] = safe_dt_series(df_map['end_dt'])
+        df_map = df_map.sort_values(['agent_name', 'end_dt'])
+        df_map['heure_texte'] = df_map['end_dt'].dt.strftime('%H:%M').fillna('--:--')
 
-    # 3) Carte
-    df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
-    if not df_map.empty:
-        df_map = df_map.dropna(subset=['end_dt']).sort_values(['agent_name', 'end_dt'])
-        
-        if not df_map.empty:
-            df_map['heure_texte'] = df_map['end_dt'].dt.strftime('%H:%M')
-            agents = sorted(df_map['agent_name'].unique())
-            
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                sel_agent = st.selectbox("👤 Enquêteur", agents)
-            with c2:
-                style = st.selectbox("🗺️ Fond", ["Satellite", "Rues", "Clair"])
+        agents = sorted(df_map['agent_name'].unique())
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            sel_agent = st.selectbox("👤 Enquêteur", agents)
+        with c2:
+            style = st.selectbox("🗺️ Fond", ["Satellite", "Rues", "Clair"])
 
-            path = df_map[df_map['agent_name'] == sel_agent]
-            if not path.empty:
-                import plotly.express as px
-                import plotly.graph_objects as go
-                fig = px.line_mapbox(path, lat="latitude", lon="longitude", zoom=14, height=600)
-                fig.add_trace(go.Scattermapbox(
-                    lat=path['latitude'], lon=path['longitude'],
-                    mode='markers+text', marker=dict(size=12, color='red'),
-                    text=path['heure_texte'], textposition="top right"
-                ))
-                
-                if style == "Satellite":
-                    fig.update_layout(mapbox_style="white-bg", mapbox_layers=[{
-                        "sourcetype": "raster", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
-                    }])
-                else:
-                    fig.update_layout(mapbox_style="open-street-map" if style=="Rues" else "carto-positron")
-                
-                fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-                st.plotly_chart(fig, use_container_width=True)
+        path = df_map[df_map['agent_name'] == sel_agent]
+
+        if path.empty:
+            st.info("Aucune donnée GPS pour cet enquêteur.")
         else:
-            st.info("Aucune donnée temporelle exploitable.")
-    else:
-        st.warning("Aucune donnée GPS pour cette sélection.")
+            import plotly.express as px
+            import plotly.graph_objects as go
 
-    # 4) Rapport
+            fig = px.line_mapbox(path, lat="latitude", lon="longitude", zoom=14, height=600)
+            fig.add_trace(go.Scattermapbox(
+                lat=path['latitude'],
+                lon=path['longitude'],
+                mode='markers+text',
+                marker=dict(size=12, color='red'),
+                text=path['heure_texte'],
+                textposition="top right"
+            ))
+
+            mapbox_styles = {
+                "Satellite": None,   # géré manuellement ci-dessous
+                "Rues":  "open-street-map",
+                "Clair": "carto-positron",
+            }
+            if style == "Satellite":
+                fig.update_layout(
+                    mapbox_style="white-bg",
+                    mapbox_layers=[{
+                        "sourcetype": "raster",
+                        "source": [
+                            "https://server.arcgisonline.com/ArcGIS/rest/services"
+                            "/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        ]
+                    }]
+                )
+            else:
+                fig.update_layout(mapbox_style=mapbox_styles[style])
+
+            fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ── 5. RAPPORT JOURNALIER ─────────────────────────────────────────────────
     st.divider()
     st.markdown("### 📋 Rapport journalier")
-    if not df_track.empty:
-        rep = df_track.groupby('agent_name').agg(
-            Enquêtes=('agent_name', 'count'),
-            Moyenne_Min=('Duree_min', lambda x: round(x.mean(), 1) if not x.dropna().empty else 0),
-            Début=('start_dt', lambda x: x.min().strftime('%H:%M') if pd.notnull(x.min()) else "N/A"),
-            Fin=('end_dt', lambda x: x.max().strftime('%H:%M') if pd.notnull(x.max()) else "N/A")
-        ).reset_index()
-        st.dataframe(rep.sort_values('Enquêtes', ascending=False), use_container_width=True, hide_index=True)
+
+    def safe_strftime(x, fmt='%H:%M'):
+        v = x.min() if hasattr(x, 'min') else x
+        return v.strftime(fmt) if pd.notnull(v) else "N/A"
+
+    rep = df_track.groupby('agent_name').agg(
+        Enquêtes   = ('agent_name', 'count'),
+        Moyenne_Min= ('Duree_min',  lambda x: round(x.mean(), 1) if not x.dropna().empty else 0),
+        Début      = ('start_dt',   lambda x: safe_strftime(x.min())),
+        Fin        = ('end_dt',     lambda x: safe_strftime(x.max())),
+    ).reset_index()
+
+    st.dataframe(
+        rep.sort_values('Enquêtes', ascending=False),
+        use_container_width=True,
+        hide_index=True
+    )
 
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
