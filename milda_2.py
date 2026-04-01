@@ -1739,25 +1739,15 @@ import io
 def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
     
-    # 1. PRÉPARATION & NETTOYAGE
+    # 1. PRÉPARATION INITIALE
     df_track = data.copy()
     
-    # Identification dynamique des colonnes
-    col_debut = 'start' if 'start' in df_track.columns else 'S0Q01_start'
-    col_fin = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
-    col_date = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
-    
-    # 2. CALCUL DES DURÉES (Sécurisé)
-    if 'duration' in df_track.columns:
-        df_track['Duree_min'] = pd.to_numeric(df_track['duration'], errors='coerce')
-    elif col_debut in df_track.columns and col_fin in df_track.columns:
-        s = pd.to_datetime(df_track[col_debut], errors='coerce')
-        e = pd.to_datetime(df_track[col_fin], errors='coerce')
-        df_track['Duree_min'] = (e - s).dt.total_seconds() / 60
-    else:
-        df_track['Duree_min'] = 0
+    # Identification des colonnes temporelles
+    start_col = 'start' if 'start' in df_track.columns else 'S0Q01_start'
+    end_col = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
+    date_col = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
 
-    # 3. FILTRES (Province, District, Village, DATE)
+    # 2. FILTRES (Géographiques + Date)
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     
     with col_f1:
@@ -1779,78 +1769,112 @@ def page_agent_tracking(data: pd.DataFrame):
             df_track = df_track[df_track['village'] == sel_vill]
 
     with col_f4:
-        # Conversion temporaire pour le sélecteur de date
-        temp_dates = pd.to_datetime(df_track[col_date], errors='coerce').dropna()
-        min_d = temp_dates.min().date() if not temp_dates.empty else datetime.now().date()
-        max_d = temp_dates.max().date() if not temp_dates.empty else datetime.now().date()
-        
-        sel_date = st.date_input("📅 Plage de Date", value=(min_d, max_d), min_value=min_d, max_value=max_d)
+        # Filtre par Date
+        df_track[date_col] = pd.to_datetime(df_track[date_col], errors='coerce')
+        valid_dates = df_track[date_col].dropna()
+        min_d = valid_dates.min().date() if not valid_dates.empty else datetime.now().date()
+        max_d = valid_dates.max().date() if not valid_dates.empty else datetime.now().date()
+        sel_date = st.date_input("📅 Date", value=(min_d, max_d))
         
         if isinstance(sel_date, tuple) and len(sel_date) == 2:
-            start_d, end_d = sel_date
-            # Filtrage par date sans modifier la colonne originale
-            df_track['temp_dt'] = pd.to_datetime(df_track[col_date], errors='coerce').dt.date
-            df_track = df_track[(df_track['temp_dt'] >= start_d) & (df_track['temp_dt'] <= end_d)]
+            df_track = df_track[(df_track[date_col].dt.date >= sel_date[0]) & (df_track[date_col].dt.date <= sel_date[1])]
 
-    # 4. PRÉPARATION DE LA CARTE (Correction définitive du ValueError)
+    # 3. CALCUL DES DURÉES (Sécurisé)
+    if start_col in df_track.columns and end_col in df_track.columns:
+        df_track['start_dt'] = pd.to_datetime(df_track[start_col], errors='coerce')
+        df_track['end_dt'] = pd.to_datetime(df_track[end_col], errors='coerce')
+        diff = df_track['end_dt'] - df_track['start_dt']
+        df_track['Duree_min'] = diff.dt.total_seconds() / 60
+    else:
+        df_track['Duree_min'] = np.nan
+
+    # 4. PRÉPARATION DE LA CARTE
     df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
     
+    # Création du timestamp pour le tracé de ligne
+    dates_str = pd.to_datetime(df_map[date_col], errors='coerce').dt.strftime('%Y-%m-%d')
+    heures_str = df_map[end_col].astype(str).str.strip().str.slice(0, 8).replace(['nan', 'None'], '00:00:00')
+    df_map['timestamp'] = pd.to_datetime(dates_str + ' ' + heures_str, errors='coerce')
+    df_map = df_map.dropna(subset=['timestamp']).sort_values(['agent_name', 'timestamp'])
+
     if not df_map.empty:
-        try:
-            # MÉTHODE DE FUSION ULTRA-SÉCURISÉE
-            # On transforme tout en STRING d'abord pour éviter le "mixed inputs"
-            dates_str = pd.to_datetime(df_map[col_date], errors='coerce').dt.strftime('%Y-%m-%d')
-            # On nettoie l'heure : on prend les 8 premiers caractères (HH:MM:SS) et on remplace les vides
-            heures_str = df_map[col_fin].astype(str).str.strip().str.slice(0, 8).replace(['nan', 'None', ''], '00:00:00')
+        df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
+        
+        # Sélection de l'agent
+        col_c1, col_c2 = st.columns([2, 1])
+        agents = sorted(df_map['agent_name'].unique())
+        with col_c1:
+            selected_agent = st.selectbox("👤 Sélectionner un enquêteur", agents)
+        with col_c2:
+            choix_carte = st.selectbox("🗺️ Style", ["Satellite", "Clair", "Rues", "Sombre"])
+
+        agent_path = df_map[df_map['agent_name'] == selected_agent]
+
+        # Tracé Plotly
+        if not agent_path.empty:
+            import plotly.express as px
+            import plotly.graph_objects as go
             
-            # Concaténation et conversion finale
-            df_map['timestamp'] = pd.to_datetime(dates_str + ' ' + heures_str, errors='coerce')
-            df_map = df_map.dropna(subset=['timestamp'])
+            fig = px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=14, height=600)
+            
+            # Points avec Heure
+            fig.add_trace(go.Scattermapbox(
+                lat=agent_path['latitude'], lon=agent_path['longitude'],
+                mode='markers+text',
+                marker=go.scattermapbox.Marker(size=12, color='red'),
+                text=agent_path['heure_texte'],
+                textposition="top right",
+                textfont=dict(size=12, color="black"),
+                name="Visite"
+            ))
 
-            if not df_map.empty:
-                df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
-                df_map = df_map.sort_values(['agent_name', 'timestamp'])
+            # Styles de carte
+            styles = {"Clair": "carto-positron", "Sombre": "carto-darkmatter", "Rues": "open-street-map"}
+            if choix_carte == "Satellite":
+                fig.update_layout(mapbox_style="white-bg", mapbox_layers=[{
+                    "sourcetype": "raster", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
+                }])
+            else:
+                fig.update_layout(mapbox_style=styles.get(choix_carte, "open-street-map"))
 
-                # 5. AFFICHAGE DE LA CARTE
-                agents = sorted(df_map['agent_name'].unique())
-                selected_agent = st.selectbox("👤 Sélectionner un enquêteur", agents)
-                agent_path = df_map[df_map['agent_name'] == selected_agent]
-                
-                if not agent_path.empty:
-                    import plotly.express as px
-                    import plotly.graph_objects as go
-                    
-                    fig = px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=12, height=600)
-                    fig.add_trace(go.Scattermapbox(
-                        lat=agent_path['latitude'], 
-                        lon=agent_path['longitude'],
-                        mode='markers+text', 
-                        marker=go.scattermapbox.Marker(size=14, color='red'),
-                        text=agent_path['heure_texte'], 
-                        textposition="top right", 
-                        name="Visite"
-                    ))
-                    fig.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0}, showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True)
-        except Exception as e:
-            st.error(f"Erreur lors du traitement des données temporelles : {e}")
+            fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+            st.plotly_chart(fig, use_container_width=True)
+
+            # 5. STATS AGENT
+            st.markdown(f"### 📊 Statistiques pour {selected_agent}")
+            durées = agent_path['Duree_min'].dropna()
+            if not durées.empty:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Enquêtes", len(durées))
+                c2.metric("Moyenne", f"{durées.mean():.1f} min")
+                c3.metric("Min", f"{durées.min():.1f} min")
+                c4.metric("Max", f"{durées.max():.1f} min")
     else:
-        st.warning("Aucune donnée GPS disponible pour cette sélection.")
+        st.warning("⚠️ Aucune donnée GPS/Temporelle valide pour cette sélection.")
 
-    # 6. RAPPORT D'ACTIVITÉ
+    # 6. RAPPORT GLOBAL
     st.divider()
-    st.markdown("### 📋 Rapport d'activité")
-    if not df_track.empty and col_debut in df_track.columns:
-        df_track['start_dt'] = pd.to_datetime(df_track[col_debut], errors='coerce')
-        df_track['end_dt'] = pd.to_datetime(df_track[col_fin], errors='coerce')
+    st.markdown("### 📋 Rapport d'activité journalier (Tous)")
+    
+    def get_min_time(x):
+        return x.min().strftime('%H:%M') if pd.notnull(x.min()) else "N/A"
+    def get_max_time(x):
+        return x.max().strftime('%H:%M') if pd.notnull(x.max()) else "N/A"
 
-        report = df_track.groupby('agent_name').agg(
-            Enquêtes=('agent_name', 'count'),
-            Duree_Moy_Min=('Duree_min', lambda x: round(x.mean(), 1) if not x.empty else 0),
-            Début=('start_dt', lambda x: x.min().strftime('%H:%M') if pd.notnull(x.min()) else "--:--"),
-            Fin=('end_dt', lambda x: x.max().strftime('%H:%M') if pd.notnull(x.max()) else "--:--")
-        ).reset_index()
-        st.dataframe(report.sort_values('Enquêtes', ascending=False), use_container_width=True, hide_index=True)
+    rapport_global = df_track.groupby('agent_name').agg(
+        Enquêtes=('agent_name', 'count'),
+        Duree_Moy=('Duree_min', lambda x: round(x.mean(), 1)),
+        Heure_Debut=('start_dt', get_min_time),
+        Heure_Fin=('end_dt', get_max_time) # Changé min() en max() ici
+    ).reset_index()
+
+    st.dataframe(rapport_global, use_container_width=True, hide_index=True)
+
+    # Export Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        rapport_global.to_excel(writer, index=False, sheet_name='Suivi')
+    st.download_button("📥 Télécharger Rapport Excel", output.getvalue(), "Rapport_Agents.xlsx", use_container_width=True)
 
 
 ################################################################################
