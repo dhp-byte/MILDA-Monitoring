@@ -1747,10 +1747,7 @@ def page_agent_tracking(data: pd.DataFrame):
     col_fin = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
     col_date = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
     
-    # Conversion forcée de la colonne date en datetime pour les filtres
-    df_track[col_date] = pd.to_datetime(df_track[col_date], errors='coerce')
-
-    # 2. CALCUL DES DURÉES
+    # 2. CALCUL DES DURÉES (Sécurisé)
     if 'duration' in df_track.columns:
         df_track['Duree_min'] = pd.to_numeric(df_track['duration'], errors='coerce')
     elif col_debut in df_track.columns and col_fin in df_track.columns:
@@ -1758,7 +1755,7 @@ def page_agent_tracking(data: pd.DataFrame):
         e = pd.to_datetime(df_track[col_fin], errors='coerce')
         df_track['Duree_min'] = (e - s).dt.total_seconds() / 60
     else:
-        df_track['Duree_min'] = np.nan
+        df_track['Duree_min'] = 0
 
     # 3. FILTRES (Province, District, Village, DATE)
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
@@ -1782,82 +1779,80 @@ def page_agent_tracking(data: pd.DataFrame):
             df_track = df_track[df_track['village'] == sel_vill]
 
     with col_f4:
-        # Filtre par Date
-        valid_dates = df_track[col_date].dropna()
-        min_d = valid_dates.min().date() if not valid_dates.empty else datetime.now().date()
-        max_d = valid_dates.max().date() if not valid_dates.empty else datetime.now().date()
+        # Conversion temporaire pour le sélecteur de date
+        temp_dates = pd.to_datetime(df_track[col_date], errors='coerce').dropna()
+        min_d = temp_dates.min().date() if not temp_dates.empty else datetime.now().date()
+        max_d = temp_dates.max().date() if not temp_dates.empty else datetime.now().date()
         
-        sel_date = st.date_input("📅 Date", value=(min_d, max_d), min_value=min_d, max_value=max_d)
+        sel_date = st.date_input("📅 Plage de Date", value=(min_d, max_d), min_value=min_d, max_value=max_d)
         
-        # Application du filtre date (gestion du tuple)
         if isinstance(sel_date, tuple) and len(sel_date) == 2:
             start_d, end_d = sel_date
-            df_track = df_track[(df_track[col_date].dt.date >= start_d) & (df_track[col_date].dt.date <= end_d)]
+            # Filtrage par date sans modifier la colonne originale
+            df_track['temp_dt'] = pd.to_datetime(df_track[col_date], errors='coerce').dt.date
+            df_track = df_track[(df_track['temp_dt'] >= start_d) & (df_track['temp_dt'] <= end_d)]
 
-    # 4. PRÉPARATION DE LA CARTE (Correction ValueError)
+    # 4. PRÉPARATION DE LA CARTE (Correction définitive du ValueError)
     df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
     
     if not df_map.empty:
-        # Création du timestamp sécurisée
-        t_date_str = df_map[col_date].dt.strftime('%Y-%m-%d')
-        t_heure_str = df_map[col_fin].astype(str).str.strip().replace('nan', '00:00:00')
-        
-        df_map['timestamp'] = pd.to_datetime(t_date_str + ' ' + t_heure_str, errors='coerce')
-        df_map = df_map.dropna(subset=['timestamp'])
-
-        if not df_map.empty:
-            df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
-            df_map = df_map.sort_values(['agent_name', 'timestamp'])
-
-            # 5. AFFICHAGE DE LA CARTE
-            agents = sorted(df_map['agent_name'].unique())
-            selected_agent = st.selectbox("👤 Sélectionner un enquêteur pour voir son parcours", agents)
-            agent_path = df_map[df_map['agent_name'] == selected_agent]
+        try:
+            # MÉTHODE DE FUSION ULTRA-SÉCURISÉE
+            # On transforme tout en STRING d'abord pour éviter le "mixed inputs"
+            dates_str = pd.to_datetime(df_map[col_date], errors='coerce').dt.strftime('%Y-%m-%d')
+            # On nettoie l'heure : on prend les 8 premiers caractères (HH:MM:SS) et on remplace les vides
+            heures_str = df_map[col_fin].astype(str).str.strip().str.slice(0, 8).replace(['nan', 'None', ''], '00:00:00')
             
-            if not agent_path.empty:
-                import plotly.express as px
-                import plotly.graph_objects as go
-                
-                fig = px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=12, height=600)
-                fig.add_trace(go.Scattermapbox(
-                    lat=agent_path['latitude'], 
-                    lon=agent_path['longitude'],
-                    mode='markers+text', 
-                    marker=go.scattermapbox.Marker(size=14, color='red', symbol='marker'),
-                    text=agent_path['heure_texte'], 
-                    textposition="top right", 
-                    name="Point de collecte"
-                ))
-                fig.update_layout(
-                    mapbox_style="open-street-map", 
-                    margin={"r":0,"t":0,"l":0,"b":0},
-                    showlegend=False
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Aucun point GPS valide pour cet agent sur cette période.")
-    else:
-        st.warning("Aucune donnée géographique disponible avec les filtres actuels.")
+            # Concaténation et conversion finale
+            df_map['timestamp'] = pd.to_datetime(dates_str + ' ' + heures_str, errors='coerce')
+            df_map = df_map.dropna(subset=['timestamp'])
 
-    # 6. RÉSUMÉ ET RAPPORT JOURNALIER
+            if not df_map.empty:
+                df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
+                df_map = df_map.sort_values(['agent_name', 'timestamp'])
+
+                # 5. AFFICHAGE DE LA CARTE
+                agents = sorted(df_map['agent_name'].unique())
+                selected_agent = st.selectbox("👤 Sélectionner un enquêteur", agents)
+                agent_path = df_map[df_map['agent_name'] == selected_agent]
+                
+                if not agent_path.empty:
+                    import plotly.express as px
+                    import plotly.graph_objects as go
+                    
+                    fig = px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=12, height=600)
+                    fig.add_trace(go.Scattermapbox(
+                        lat=agent_path['latitude'], 
+                        lon=agent_path['longitude'],
+                        mode='markers+text', 
+                        marker=go.scattermapbox.Marker(size=14, color='red'),
+                        text=agent_path['heure_texte'], 
+                        textposition="top right", 
+                        name="Visite"
+                    ))
+                    fig.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0}, showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Erreur lors du traitement des données temporelles : {e}")
+    else:
+        st.warning("Aucune donnée GPS disponible pour cette sélection.")
+
+    # 6. RAPPORT D'ACTIVITÉ
     st.divider()
-    st.markdown("### 📋 Rapport d'activité des agents")
-    
-    if col_debut in df_track.columns and col_fin in df_track.columns:
-        # Préparation des colonnes pour le groupby
+    st.markdown("### 📋 Rapport d'activité")
+    if not df_track.empty and col_debut in df_track.columns:
         df_track['start_dt'] = pd.to_datetime(df_track[col_debut], errors='coerce')
         df_track['end_dt'] = pd.to_datetime(df_track[col_fin], errors='coerce')
 
         report = df_track.groupby('agent_name').agg(
             Enquêtes=('agent_name', 'count'),
             Duree_Moy_Min=('Duree_min', lambda x: round(x.mean(), 1) if not x.empty else 0),
-            Premiere_Collecte=('start_dt', lambda x: x.min().strftime('%H:%M') if pd.notnull(x.min()) else "N/A"),
-            Derniere_Collecte=('end_dt', lambda x: x.max().strftime('%H:%M') if pd.notnull(x.max()) else "N/A")
+            Début=('start_dt', lambda x: x.min().strftime('%H:%M') if pd.notnull(x.min()) else "--:--"),
+            Fin=('end_dt', lambda x: x.max().strftime('%H:%M') if pd.notnull(x.max()) else "--:--")
         ).reset_index()
-        
-        st.dataframe(report.sort_values(by='Enquêtes', ascending=False), use_container_width=True, hide_index=True)
-    else:
-        st.error("Les colonnes de temps (Heure Début/Fin) sont introuvables dans le fichier.")
+        st.dataframe(report.sort_values('Enquêtes', ascending=False), use_container_width=True, hide_index=True)
+
+
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
 ################################################################################
