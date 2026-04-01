@@ -1882,68 +1882,114 @@ def page_data_quality(data: pd.DataFrame):
     
     df_qc = data.copy()
 
-    # Conversion forcée pour éviter AttributeError
-    df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
-    if 'heure_interview' in df_qc.columns:
-        df_qc['timestamp'] = pd.to_datetime(
-            df_qc['date_enquete'].dt.date.astype(str) + ' ' + df_qc['heure_interview'].astype(str),
-            errors='coerce'
-        )
-    else:
-        df_qc['timestamp'] = df_qc['date_enquete']
+    # --- 1. FONCTIONS DE CONVERSION ROBUSTES ---
+    def get_safe_timestamp(row):
+        """Combine date et heure de manière isolée pour éviter Mixed Inputs"""
+        try:
+            d_col = 'date_enquete' if 'date_enquete' in row else 'S0Q01'
+            h_col = 'heure_interview' if 'heure_interview' in row else 'end'
+            
+            d_val = str(row[d_col]).split(' ')[0] if pd.notnull(row[d_col]) else ""
+            h_val = str(row[h_col]).strip() if pd.notnull(row[h_col]) else ""
+            
+            if not d_val or h_val.lower() in ['nan', 'none', '']:
+                return pd.NaT
+            
+            # Si l'heure contient déjà la date, on la parse directement
+            if '-' in h_val or '/' in h_val:
+                return pd.to_datetime(h_val, errors='coerce', dayfirst=True)
+                
+            return pd.to_datetime(f"{d_val} {h_val}", errors='coerce', dayfirst=True)
+        except:
+            return pd.NaT
 
-    def calculate_agent_quality(agent_df):
-        total = len(agent_df)
-        if total == 0: return None
+    # --- 2. TRAITEMENT DES DONNÉES ---
+    with st.spinner("Analyse de la qualité en cours..."):
+        # Création du timestamp sécurisé
+        df_qc['timestamp'] = df_qc.apply(get_safe_timestamp, axis=1)
         
-        # Complétude
-        comp_gps = (agent_df['latitude'].notna().sum()) / total * 100
-        comp_data = agent_df.notna().mean(axis=1).mean() * 100
-        
-        # Doublons et Vitesse
-        doublons = 0
-        vitesse = 0
-        valid_ts = agent_df.dropna(subset=['timestamp'])
-        if len(valid_ts) > 1:
-            doublons = (valid_ts['timestamp'].duplicated().sum() / total) * 100
-            duree = (valid_ts['timestamp'].max() - valid_ts['timestamp'].min()).total_seconds() / 3600
-            if duree > 0: vitesse = total / duree
+        def calculate_agent_quality(agent_df):
+            total = len(agent_df)
+            if total == 0: return None
+            
+            # Complétude GPS (Latitude présente)
+            comp_gps = (agent_df['latitude'].notna().sum()) / total * 100
+            
+            # Complétude des données (moyenne des cellules non vides)
+            comp_data = agent_df.notna().mean(axis=1).mean() * 100
+            
+            # Doublons temporels et Vitesse
+            doublons_pct = 0
+            vitesse_h = 0
+            valid_ts = agent_df.dropna(subset=['timestamp'])
+            
+            if len(valid_ts) > 1:
+                # Calcul des doublons sur le timestamp
+                doublons_count = valid_ts['timestamp'].duplicated().sum()
+                doublons_pct = (doublons_count / total) * 100
+                
+                # Calcul de la vitesse (enquêtes par heure)
+                diff_time = (valid_ts['timestamp'].max() - valid_ts['timestamp'].min()).total_seconds() / 3600
+                if diff_time > 0.1: # Éviter division par presque zéro
+                    vitesse_h = total / diff_time
 
-        # Score calculé (Pondération)
-        score = (comp_data * 0.5) + (comp_gps * 0.3) + ((100 - doublons) * 0.2)
-        
-        return {
-            'agent': agent_df['agent_name'].iloc[0],
-            'nb_enquetes': total,
-            'completeness_data': round(comp_data, 1),
-            'completeness_coords': round(comp_gps, 1),
-            'vitesse_travail': round(vitesse, 2),
-            'score_qualite': round(score, 1)
-        }
+            # Score final pondéré
+            # 50% Complétude, 30% GPS, 20% Absence de doublons
+            score = (comp_data * 0.5) + (comp_gps * 0.3) + ((100 - doublons_pct) * 0.2)
+            
+            return {
+                'Agent': agent_df['agent_name'].iloc[0],
+                'Enquêtes': total,
+                'Complétude (%)': round(comp_data, 1),
+                'GPS (%)': round(comp_gps, 1),
+                'Doublons (%)': round(doublons_pct, 1),
+                'Vitesse (Enq/h)': round(vitesse_h, 2),
+                'Score Qualité': round(score, 1)
+            }
 
-    # Calcul global
-    quality_results = []
-    for agent in df_qc['agent_name'].dropna().unique():
-        metrics = calculate_agent_quality(df_qc[df_qc['agent_name'] == agent])
-        if metrics: quality_results.append(metrics)
+        # Calcul pour chaque agent
+        quality_results = []
+        unique_agents = df_qc['agent_name'].dropna().unique()
+        for agent in unique_agents:
+            res = calculate_agent_quality(df_qc[df_qc['agent_name'] == agent])
+            if res: quality_results.append(res)
+        
+        if not quality_results:
+            st.warning("Aucune donnée disponible pour calculer la qualité.")
+            return
+
+        quality_df = pd.DataFrame(quality_results).sort_values('Score Qualité', ascending=False)
+
+    # --- 3. AFFICHAGE DES RÉSULTATS ---
+    import plotly.express as px
     
-    quality_df = pd.DataFrame(quality_results).sort_values('score_qualite', ascending=False)
+    # Cartes de scores globaux
+    avg_score = quality_df['Score Qualité'].mean()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Score Moyen Global", f"{avg_score:.1f} / 100")
+    m2.metric("Meilleure Performance", f"{quality_df['Score Qualité'].max():.1f}")
+    m3.metric("Agents Analysés", len(quality_df))
 
-    # Affichage Metrics
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Score Moyen", f"{quality_df['score_qualite'].mean():.1f}/100")
-    c2.metric("Meilleur Score", f"{quality_df['score_qualite'].max():.1f}/100")
-    c3.metric("Nb Agents", len(quality_df))
+    # Graphique de classement
+    fig = px.bar(
+        quality_df, 
+        x='Agent', 
+        y='Score Qualité', 
+        color='Score Qualité',
+        color_continuous_scale='RdYlGn',
+        range_color=[0, 100],
+        title="Classement de la Qualité par Agent"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Graphique des scores
-    fig_score = px.bar(quality_df, x='agent', y='score_qualite', color='score_qualite',
-                       color_continuous_scale='RdYlGn', title="Classement Qualité des Agents")
-    st.plotly_chart(fig_score, use_container_width=True)
-
-    # Tableau détaillé
-    st.markdown("### 📋 Détails de performance")
-    st.dataframe(quality_df.style.background_gradient(subset=['score_qualite'], cmap='RdYlGn'), use_container_width=True)
-
+    # Tableau détaillé avec coloration
+    st.markdown("### 📋 Détails des indicateurs de contrôle")
+    
+    # Style pour mettre en évidence les bons et mauvais scores
+    styled_df = quality_df.style.background_gradient(subset=['Score Qualité'], cmap='RdYlGn', vmin=0, vmax=100) \
+                                .background_gradient(subset=['Doublons (%)'], cmap='Reds', vmin=0, vmax=10)
+    
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
 ################################################################################
 # 3. GÉNÉRATION AUTOMATIQUE DE RAPPORT (Format Word)
 ################################################################################
