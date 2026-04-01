@@ -1617,7 +1617,14 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
                                 is_servi = row.get('indic_servi') == 1
                                 pnt.style.iconstyle.color = 'ff00ff00' if is_servi else 'ff0000ff'
                                 pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png'
-                                pnt.description = f"ID: {row.get('id_menage')}<br>CS: {row.get('centre_sante')}"
+                                pnt.description = (
+                                f"<b>ID Ménage:</b> {row.get('id_menage', 'N/A')}<br>"
+                                f"<b>Province:</b> {row.get('province', 'N/A')}<br>"
+                                f"<b>District:</b> {row.get('district', 'N/A')}<br>"
+                                f"<b>Centre de Santé:</b> {row.get('centre_sante', 'N/A')}<br>"
+                                f"<b>Village:</b> {row.get('village', 'N/A')}<br>"
+                                f"<b>Agent Enquêteur:</b> {row.get('agent_name', 'N/A')}"
+                            )
                             
                             clean_prov = str(prov_name).replace("/", "-")
                             clean_dist = str(dist_name).replace("/", "-")
