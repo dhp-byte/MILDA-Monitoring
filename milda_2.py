@@ -1739,21 +1739,63 @@ import io
 def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
     
-    # 1. PRÉPARATION INITIALE
     df_track = data.copy()
-    
-    # Identification des colonnes
+
     start_col = 'start' if 'start' in df_track.columns else 'S0Q01_start'
     end_col = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
     date_col = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
 
-    # --- FIX CRITIQUE POUR MIXED INPUTS ---
-    # On force tout en string avant de convertir pour éviter le crash
+    # ---------- Helpers robustes ----------
+    def safe_datetime(series, dayfirst=True):
+        s = series.copy()
+        s = s.astype("string").str.strip()
+        s = s.replace(['nan', 'None', 'NAT', 'NaT', '', '<NA>'], pd.NA)
+        return pd.to_datetime(s, errors='coerce', format='mixed', dayfirst=dayfirst)
+
+    def safe_event_datetime(date_series, value_series, dayfirst=True):
+        """
+        Si value_series contient :
+        - une datetime complète -> on la parse directement
+        - une heure seule (HH:MM ou HH:MM:SS) -> on la combine avec date_series
+        """
+        raw = value_series.astype("string").str.strip()
+        raw = raw.replace(['nan', 'None', 'NAT', 'NaT', '', '<NA>'], pd.NA)
+
+        # Détection "heure seule"
+        is_time_only = raw.str.match(r'^\d{1,2}:\d{2}(:\d{2})?$', na=False)
+
+        out = pd.Series(pd.NaT, index=raw.index, dtype='datetime64[ns]')
+
+        # Cas 1 : datetime complète
+        if (~is_time_only).any():
+            out.loc[~is_time_only] = pd.to_datetime(
+                raw.loc[~is_time_only],
+                errors='coerce',
+                format='mixed',
+                dayfirst=dayfirst
+            )
+
+        # Cas 2 : heure seule -> combiner avec la date d'enquête
+        if is_time_only.any():
+            d = safe_datetime(date_series.loc[is_time_only], dayfirst=dayfirst).dt.strftime('%Y-%m-%d')
+            t = raw.loc[is_time_only].str.replace(r'^(\d{1,2}:\d{2})$', r'\1:00', regex=True)
+
+            out.loc[is_time_only] = pd.to_datetime(
+                d + ' ' + t,
+                errors='coerce',
+                format='mixed',
+                dayfirst=dayfirst
+            )
+
+        return out
+
+    # 1) Nettoyage minimum
     for c in [start_col, end_col, date_col]:
         if c in df_track.columns:
-            df_track[c] = df_track[c].astype(str).replace(['nan', 'None', 'NAT', 'NaT'], np.nan)
+            df_track[c] = df_track[c].astype("string").str.strip()
+            df_track[c] = df_track[c].replace(['nan', 'None', 'NAT', 'NaT', '', '<NA>'], pd.NA)
 
-    # 2. FILTRES
+    # 2) Filtres
     col_f1, col_f2, col_f3, col_f4 = st.columns(4)
     
     with col_f1:
@@ -1775,39 +1817,50 @@ def page_agent_tracking(data: pd.DataFrame):
             df_track = df_track[df_track['village'] == sel_vill]
 
     with col_f4:
-        # Conversion sécurisée de la date pour le calendrier
-        temp_dates = pd.to_datetime(df_track[date_col], errors='coerce').dropna()
+        temp_dates = safe_datetime(df_track[date_col]).dropna()
         min_d = temp_dates.min().date() if not temp_dates.empty else datetime.now().date()
         max_d = temp_dates.max().date() if not temp_dates.empty else datetime.now().date()
         sel_date = st.date_input("📅 Date", value=(min_d, max_d))
         
         if isinstance(sel_date, tuple) and len(sel_date) == 2:
-            df_track['temp_check'] = pd.to_datetime(df_track[date_col], errors='coerce').dt.date
-            df_track = df_track[(df_track['temp_check'] >= sel_date[0]) & (df_track['temp_check'] <= sel_date[1])]
+            df_track['temp_check'] = safe_datetime(df_track[date_col]).dt.date
+            df_track = df_track[
+                (df_track['temp_check'] >= sel_date[0]) &
+                (df_track['temp_check'] <= sel_date[1])
+            ]
 
-    # 3. CALCUL DES DURÉES (Version ultra-sécurisée)
-    if start_col in df_track.columns and end_col in df_track.columns:
-        df_track['start_dt'] = pd.to_datetime(df_track[start_col], errors='coerce')
-        df_track['end_dt'] = pd.to_datetime(df_track[end_col], errors='coerce')
-        # On calcule la durée seulement là où les deux sont valides
-        df_track['Duree_min'] = (df_track['end_dt'] - df_track['start_dt']).dt.total_seconds() / 60
-    else:
-        df_track['Duree_min'] = 0
+    # 3) Calcul des durées
+    df_track['start_dt'] = pd.NaT
+    df_track['end_dt'] = pd.NaT
+    df_track['Duree_min'] = np.nan
 
-    # 4. PRÉPARATION DE LA CARTE
+    if start_col in df_track.columns:
+        df_track['start_dt'] = safe_event_datetime(df_track[date_col], df_track[start_col])
+
+    if end_col in df_track.columns:
+        df_track['end_dt'] = safe_event_datetime(df_track[date_col], df_track[end_col])
+
+    valid_mask = df_track['start_dt'].notna() & df_track['end_dt'].notna()
+    df_track.loc[valid_mask, 'Duree_min'] = (
+        (df_track.loc[valid_mask, 'end_dt'] - df_track.loc[valid_mask, 'start_dt'])
+        .dt.total_seconds() / 60
+    )
+
+    # Optionnel : éliminer les durées négatives aberrantes
+    df_track.loc[df_track['Duree_min'] < 0, 'Duree_min'] = np.nan
+
+    # 4) Carte
     df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
     
     if not df_map.empty:
-        # Création du timestamp pour le tracé (Nettoyage final)
-        d_str = pd.to_datetime(df_map[date_col], errors='coerce').dt.strftime('%Y-%m-%d')
-        h_str = df_map[end_col].astype(str).str.strip().str.slice(0, 8).replace(['nan', 'None'], '00:00:00')
-        df_map['timestamp'] = pd.to_datetime(d_str + ' ' + h_str, errors='coerce')
+        # Utiliser directement end_dt déjà parsé
+        df_map['timestamp'] = df_map['end_dt']
         df_map = df_map.dropna(subset=['timestamp']).sort_values(['agent_name', 'timestamp'])
 
         if not df_map.empty:
             df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
             
-            agents = sorted(df_map['agent_name'].unique())
+            agents = sorted(df_map['agent_name'].dropna().unique())
             c_c1, c_c2 = st.columns([2, 1])
             with c_c1:
                 selected_agent = st.selectbox("👤 Enquêteur", agents)
@@ -1822,7 +1875,8 @@ def page_agent_tracking(data: pd.DataFrame):
                 
                 fig = px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=14, height=600)
                 fig.add_trace(go.Scattermapbox(
-                    lat=agent_path['latitude'], lon=agent_path['longitude'],
+                    lat=agent_path['latitude'],
+                    lon=agent_path['longitude'],
                     mode='markers+text',
                     marker=go.scattermapbox.Marker(size=12, color='red'),
                     text=agent_path['heure_texte'],
@@ -1830,18 +1884,22 @@ def page_agent_tracking(data: pd.DataFrame):
                     textfont=dict(size=12, color="black")
                 ))
                 
-                # Styles de carte
                 if choix_carte == "Satellite":
-                    fig.update_layout(mapbox_style="white-bg", mapbox_layers=[{
-                        "sourcetype": "raster", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
-                    }])
+                    fig.update_layout(
+                        mapbox_style="white-bg",
+                        mapbox_layers=[{
+                            "sourcetype": "raster",
+                            "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
+                        }]
+                    )
                 else:
-                    fig.update_layout(mapbox_style="open-street-map" if choix_carte == "Rues" else "carto-positron")
+                    fig.update_layout(
+                        mapbox_style="open-street-map" if choix_carte == "Rues" else "carto-positron"
+                    )
 
                 fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Stats rapides
                 dur = agent_path['Duree_min'].dropna()
                 if not dur.empty:
                     m1, m2, m3 = st.columns(3)
@@ -1853,18 +1911,24 @@ def page_agent_tracking(data: pd.DataFrame):
     else:
         st.warning("⚠️ Aucune donnée GPS valide pour cette province/district.")
 
-    # 5. RAPPORT GLOBAL
+    # 5) Rapport global
     st.divider()
     st.markdown("### 📋 Rapport d'activité journalier")
-    if not df_track.empty:
-        # On s'assure que Heure_Debut/Fin sont bien calculés sur les colonnes converties
+
+    if not df_track.empty and 'agent_name' in df_track.columns:
         report = df_track.groupby('agent_name').agg(
             Enquêtes=('agent_name', 'count'),
-            Duree_Moy=('Duree_min', lambda x: round(x.mean(), 1) if not x.empty else 0),
-            Début=('start_dt', lambda x: x.min().strftime('%H:%M') if pd.notnull(x.min()) else "N/A"),
-            Fin=('end_dt', lambda x: x.max().strftime('%H:%M') if pd.notnull(x.max()) else "N/A")
+            Duree_Moy=('Duree_min', lambda x: round(x.dropna().mean(), 1) if x.dropna().size else 0),
+            Début=('start_dt', lambda x: x.min().strftime('%H:%M') if x.notna().any() else "N/A"),
+            Fin=('end_dt', lambda x: x.max().strftime('%H:%M') if x.notna().any() else "N/A")
         ).reset_index()
-        st.dataframe(report.sort_values('Enquêtes', ascending=False), use_container_width=True, hide_index=True)
+
+        st.dataframe(
+            report.sort_values('Enquêtes', ascending=False),
+            use_container_width=True,
+            hide_index=True
+        )
+
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
 ################################################################################
