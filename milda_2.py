@@ -1739,14 +1739,17 @@ import io
 def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
     
-    # 1. PRÉPARATION
+    # 1. PRÉPARATION & NETTOYAGE
     df_track = data.copy()
     
-    # Identification dynamique des colonnes de temps (selon votre mapping)
-    # On cherche 'start' ou 'heure_debut' / 'end' ou 'heure_interview'
-    col_debut = 'start' if 'start' in df_track.columns else 'S0Q01_start' # à adapter selon votre mapping
+    # Identification dynamique des colonnes
+    col_debut = 'start' if 'start' in df_track.columns else 'S0Q01_start'
     col_fin = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
+    col_date = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
     
+    # Conversion forcée de la colonne date en datetime pour les filtres
+    df_track[col_date] = pd.to_datetime(df_track[col_date], errors='coerce')
+
     # 2. CALCUL DES DURÉES
     if 'duration' in df_track.columns:
         df_track['Duree_min'] = pd.to_numeric(df_track['duration'], errors='coerce')
@@ -1757,75 +1760,104 @@ def page_agent_tracking(data: pd.DataFrame):
     else:
         df_track['Duree_min'] = np.nan
 
-    # 3. FILTRES GÉOGRAPHIQUES
-    col_f1, col_f2, col_f3 = st.columns(3)
+    # 3. FILTRES (Province, District, Village, DATE)
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+    
     with col_f1:
         prov_list = ["Toutes"] + sorted(df_track['province'].dropna().unique().tolist())
         sel_prov = st.selectbox("📍 Province", prov_list)
         if sel_prov != "Toutes":
             df_track = df_track[df_track['province'] == sel_prov]
     
-    # [Les filtres District et Village restent identiques...]
     with col_f2:
         dist_list = ["Tous"] + sorted(df_track['district'].dropna().unique().tolist())
         sel_dist = st.selectbox("🏙️ District", dist_list)
         if sel_dist != "Tous":
             df_track = df_track[df_track['district'] == sel_dist]
+            
     with col_f3:
         vill_list = ["Tous"] + sorted(df_track['village'].dropna().unique().tolist())
         sel_vill = st.selectbox("🏡 Village", vill_list)
         if sel_vill != "Tous":
             df_track = df_track[df_track['village'] == sel_vill]
 
-    # 4. PRÉPARATION DE LA CARTE
+    with col_f4:
+        # Filtre par Date
+        valid_dates = df_track[col_date].dropna()
+        min_d = valid_dates.min().date() if not valid_dates.empty else datetime.now().date()
+        max_d = valid_dates.max().date() if not valid_dates.empty else datetime.now().date()
+        
+        sel_date = st.date_input("📅 Date", value=(min_d, max_d), min_value=min_d, max_value=max_d)
+        
+        # Application du filtre date (gestion du tuple)
+        if isinstance(sel_date, tuple) and len(sel_date) == 2:
+            start_d, end_d = sel_date
+            df_track = df_track[(df_track[col_date].dt.date >= start_d) & (df_track[col_date].dt.date <= end_d)]
+
+    # 4. PRÉPARATION DE LA CARTE (Correction ValueError)
     df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
     
-    # Création du timestamp (S0Q01 est la date dans votre nouveau formulaire)
-    col_date = 'date_enquete' if 'date_enquete' in df_map.columns else 'S0Q01'
-    t_date = pd.to_datetime(df_map[col_date], errors='coerce').dt.date.astype(str)
-    t_heure = df_map[col_fin].astype(str) if col_fin in df_map.columns else ""
-    
-    df_map['timestamp'] = pd.to_datetime(t_date + ' ' + t_heure, errors='coerce')
-    df_map = df_map.dropna(subset=['timestamp'])
-    
-    df_map['heure_texte'] = ""
-    if not df_map.empty and pd.api.types.is_datetime64_any_dtype(df_map['timestamp']):
-        df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
-        df_map = df_map.sort_values(['agent_name', 'timestamp'])
-
-    # 5. AFFICHAGE DE LA CARTE
-    agents = sorted(df_map['agent_name'].unique()) if not df_map.empty else []
-    if agents:
-        selected_agent = st.selectbox("👤 Sélectionner un enquêteur", agents)
-        agent_path = df_map[df_map['agent_name'] == selected_agent]
+    if not df_map.empty:
+        # Création du timestamp sécurisée
+        t_date_str = df_map[col_date].dt.strftime('%Y-%m-%d')
+        t_heure_str = df_map[col_fin].astype(str).str.strip().replace('nan', '00:00:00')
         
-        fig = px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=14, height=500)
-        fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'], lon=agent_path['longitude'],
-            mode='markers+text', marker=go.scattermapbox.Marker(size=12, color='red'),
-            text=agent_path['heure_texte'], textposition="top right", name="Visite"
-        ))
-        fig.update_layout(mapbox_style="open-street-map", margin={"r":0,"t":0,"l":0,"b":0})
-        st.plotly_chart(fig, use_container_width=True)
+        df_map['timestamp'] = pd.to_datetime(t_date_str + ' ' + t_heure_str, errors='coerce')
+        df_map = df_map.dropna(subset=['timestamp'])
 
-    # 6. RÉSUMÉ ET RAPPORT (CORRECTION DU KEYERROR ICI)
+        if not df_map.empty:
+            df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
+            df_map = df_map.sort_values(['agent_name', 'timestamp'])
+
+            # 5. AFFICHAGE DE LA CARTE
+            agents = sorted(df_map['agent_name'].unique())
+            selected_agent = st.selectbox("👤 Sélectionner un enquêteur pour voir son parcours", agents)
+            agent_path = df_map[df_map['agent_name'] == selected_agent]
+            
+            if not agent_path.empty:
+                import plotly.express as px
+                import plotly.graph_objects as go
+                
+                fig = px.line_mapbox(agent_path, lat="latitude", lon="longitude", zoom=12, height=600)
+                fig.add_trace(go.Scattermapbox(
+                    lat=agent_path['latitude'], 
+                    lon=agent_path['longitude'],
+                    mode='markers+text', 
+                    marker=go.scattermapbox.Marker(size=14, color='red', symbol='marker'),
+                    text=agent_path['heure_texte'], 
+                    textposition="top right", 
+                    name="Point de collecte"
+                ))
+                fig.update_layout(
+                    mapbox_style="open-street-map", 
+                    margin={"r":0,"t":0,"l":0,"b":0},
+                    showlegend=False
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Aucun point GPS valide pour cet agent sur cette période.")
+    else:
+        st.warning("Aucune donnée géographique disponible avec les filtres actuels.")
+
+    # 6. RÉSUMÉ ET RAPPORT JOURNALIER
     st.divider()
-    st.markdown("### 📋 Rapport d'activité journalier")
+    st.markdown("### 📋 Rapport d'activité des agents")
     
-    # On utilise les noms de colonnes identifiés au début
     if col_debut in df_track.columns and col_fin in df_track.columns:
+        # Préparation des colonnes pour le groupby
         df_track['start_dt'] = pd.to_datetime(df_track[col_debut], errors='coerce')
         df_track['end_dt'] = pd.to_datetime(df_track[col_fin], errors='coerce')
 
         report = df_track.groupby('agent_name').agg(
             Enquêtes=('agent_name', 'count'),
-            Duree_Moyenne=('Duree_min', lambda x: round(x.mean(), 1) if not x.empty else 0),
-            Debut=('start_dt', lambda x: x.min().strftime('%H:%M') if pd.notnull(x.min()) else "N/A"),
-            Fin=('end_dt', lambda x: x.max().strftime('%H:%M') if pd.notnull(x.max()) else "N/A")
+            Duree_Moy_Min=('Duree_min', lambda x: round(x.mean(), 1) if not x.empty else 0),
+            Premiere_Collecte=('start_dt', lambda x: x.min().strftime('%H:%M') if pd.notnull(x.min()) else "N/A"),
+            Derniere_Collecte=('end_dt', lambda x: x.max().strftime('%H:%M') if pd.notnull(x.max()) else "N/A")
         ).reset_index()
-        st.dataframe(report, use_container_width=True)
+        
+        st.dataframe(report.sort_values(by='Enquêtes', ascending=False), use_container_width=True, hide_index=True)
     else:
-        st.warning("Colonnes temporelles (start/end) manquantes pour le rapport.")
+        st.error("Les colonnes de temps (Heure Début/Fin) sont introuvables dans le fichier.")
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
 ################################################################################
