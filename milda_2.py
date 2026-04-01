@@ -1888,15 +1888,20 @@ def page_agent_tracking(data: pd.DataFrame):
     st.divider()
     st.markdown("### 📋 Rapport journalier")
 
-    def safe_strftime(x, fmt='%H:%M'):
-        v = x.min() if hasattr(x, 'min') else x
-        return v.strftime(fmt) if pd.notnull(v) else "N/A"
-
+    def safe_strftime(val, fmt='%H:%M'):
+        """Accepte un scalaire Timestamp ou NaT — jamais une Series."""
+        try:
+            if pd.isnull(val):
+                return "N/A"
+            return pd.Timestamp(val).strftime(fmt)
+        except:
+            return "N/A"
+    
     rep = df_track.groupby('agent_name').agg(
-        Enquêtes   = ('agent_name', 'count'),
-        Moyenne_Min= ('Duree_min',  lambda x: round(x.mean(), 1) if not x.dropna().empty else 0),
-        Début      = ('start_dt',   lambda x: safe_strftime(x.min())),
-        Fin        = ('end_dt',     lambda x: safe_strftime(x.max())),
+        Enquêtes    = ('agent_name', 'count'),
+        Moyenne_Min = ('Duree_min',  lambda x: round(x.mean(), 1) if not x.dropna().empty else 0),
+        Début       = ('start_dt',   lambda x: safe_strftime(x.min())),
+        Fin         = ('end_dt',     lambda x: safe_strftime(x.max())),
     ).reset_index()
 
     st.dataframe(
