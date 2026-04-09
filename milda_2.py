@@ -3004,6 +3004,13 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
+    if 'raison' in data.columns:
+        doc.add_heading('Tableau : Raison de non Scannage', level=2)
+        raison_series = data['raison'].str.split(', ').explode().value_counts()
+        table_raison = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in raison_series.items()]
+        create_table(doc, table_raison, ['Raison de non scannage', 'Effectif', '% de moustiquaires'])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+        
     # Sauvegarder en mémoire
     output = io.BytesIO()
     doc.save(output)
