@@ -816,7 +816,7 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
             'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'menage_chef'],
             'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'S1Q17', 'menage_servi'],
             'norme': ['norme', 'S1Q21', 'respect_norme', "${agent_name},Ce ménage a-t-il été servi conformément à la norme de la CDM 2026?"],
-            'menage_marque': ['menage_marque', 'Est-ce que le ménage a été marqué comme un ménage ayant reçu de MILDA?', 'S1Q22'],
+            'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'S1Q22'],
             'information': ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information', 'S1Q23'],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'S1Q20'],
