@@ -847,11 +847,11 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
 
         # APRÈS avoir appliqué le rename_dict, ajoutez cette sécurité :
-        if 'end_dt' in data.columns:
-            data['end_dt'] = pd.to_datetime(data['end_dt'], errors='coerce')
-        else:
-            # Si 'end' n'existe pas, on utilise la date d'enquête comme repli pour éviter le crash
-            data['end_dt'] = data.get('date_enquete', pd.Timestamp.now())
+        if 'end_dt' not in data.columns:
+            if 'date_enquete' in data.columns:
+                data['end_dt'] = data['date_enquete'] # Repli sur la date d'enquête
+            else:
+                data['end_dt'] = pd.Timestamp.now()
         # 5. Calcul des indicateurs de performance (ALIGNÉS SUR LE RAPPORT WORD)
         # Ces colonnes 'indic_...' sont celles utilisées par generate_automatic_report
         data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
