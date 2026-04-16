@@ -820,8 +820,9 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
             'information': ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information', 'S1Q23'],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'S1Q20'],
-            'latitude': ['latitude', '_geolocation_latitude', 'lat'],
-            'longitude': ['longitude', '_geolocation_longitude', 'long']
+            'latitude': ['_LES COORDONNEES GEOGRAPHIQUES_latitude', 'latitude', 'lat'],
+            'longitude': ['_LES COORDONNEES GEOGRAPHIQUES_longitude', 'longitude', 'long'],
+            'end_dt': ['end', 'Heure de fin', 'end_dt']
         }
         
         # Application du renommage
