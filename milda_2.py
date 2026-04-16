@@ -834,6 +834,7 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
                     break
         data = data.rename(columns=rename_dict)
 
+    
         # 3. Nettoyage et Normalisation (Crucial pour le rapport)
         # On s'assure que 'Oui'/'Non' sont uniformes
         yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information', 'menage_chef']
