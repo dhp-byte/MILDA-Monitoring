@@ -791,10 +791,10 @@ def load_data_from_kobo(server_url: str, asset_uid: str, token: str) -> Tuple[pd
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.DataFrame, Dict]:
-    """Charge et traite les données avec mise en cache"""
+    """Charge et traite les données Excel en alignant les indicateurs sur le format KoBo"""
     
     try:
-        # Lecture du fichier
+        # 1. Lecture du fichier
         if sheet_name:
             try:
                 data = pd.read_excel(uploaded_file, sheet_name=sheet_name)
@@ -803,91 +803,86 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
         else:
             data = pd.read_excel(uploaded_file, sheet_name=0)
         
-        # Mapping des colonnes (version robuste)
+        # 2. Mapping des colonnes (Identique à KoBo pour l'unification)
         column_mapping = {
             'province': ['province', 'Province', 'S0Q02'],
             'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q06'],
-            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q07'],
+            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q07', 'cs'],
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
-            'start': ['start'],
-            'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
-            'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
-            'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
-            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
+            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05', 'enqueteur'],
             'village': ['village', 'Village/Avenue/Quartier', 'S0Q08'],
-            'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'gr_1/S1Q2'],
-            'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
-            'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
-            'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
-            'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
-            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21', "${agent_name},Ce ménage a-t-il été servi conformément à la norme de la CDM 2026?"],
-            'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
-            'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
-            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
-            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
-            'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
-            'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
-            'raison' : ['Sélectionner la raison', 'S1Q25'],
-            'raison_scan' : ["${agent_name},Pourquoi vous n'avez pas pu scanner nombre codes QR corresondant aux MILDA reçu dans le ménage?", 'rsn'],
-            'source': ['Où avez-vous vu ou entendu ces informations ?', 'source'],
-            'conseil' : ['sensibilisation', "Au cours du mois dernier, quelles instructions d'utilisation et d'entretien des moustiquaires avez-vous vues ou entendues?"],
-            'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
+            'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
+            'activ_rev': ['S1Q05', 'Profession du chef de ménage', 'activ_rev'],
+            'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'menage_chef'],
+            'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'S1Q17', 'menage_servi'],
+            'norme': ['norme', 'S1Q21', 'respect_norme', "${agent_name},Ce ménage a-t-il été servi conformément à la norme de la CDM 2026?"],
+            'menage_marque': ['menage_marque', 'Est-ce que le ménage a été marqué comme un ménage ayant reçu de MILDA?', 'S1Q22'],
+            'information': ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information', 'S1Q23'],
+            'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'S1Q19'],
+            'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'S1Q20'],
+            'latitude': ['latitude', '_geolocation_latitude', 'lat'],
+            'longitude': ['longitude', '_geolocation_longitude', 'long']
         }
         
-        # Appliquer le mapping
+        # Application du renommage
         rename_dict = {}
         for target, sources in column_mapping.items():
             for source in sources:
                 if source in data.columns:
                     rename_dict[source] = target
                     break
-        
         data = data.rename(columns=rename_dict)
-        
-        # Normalisation des colonnes Oui/Non
-        yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information', 'menage_chef', 'respondant_col', 'id_scan', 'sensibilise']
+
+        # 3. Nettoyage et Normalisation (Crucial pour le rapport)
+        # On s'assure que 'Oui'/'Non' sont uniformes
+        yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information', 'menage_chef']
         for col in yes_no_cols:
             if col in data.columns:
-                data[col] = data[col].apply(DataProcessor.normalize_yes_no)
+                data[col] = data[col].astype(str).apply(DataProcessor.normalize_yes_no)
         
-        # Conversion des valeurs numériques
-        if 'nb_personnes' in data.columns:
-            data['nb_personnes'] = pd.to_numeric(data['nb_personnes'], errors='coerce')
-        if 'nb_milda_recues' in data.columns:
-            data['nb_milda_recues'] = pd.to_numeric(data['nb_milda_recues'], errors='coerce')
+        # 4. Conversions numériques
+        for col in ['nb_personnes', 'nb_milda_recues']:
+            if col in data.columns:
+                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
         
-        # Calcul des indicateurs
+        # 5. Calcul des indicateurs de performance (ALIGNÉS SUR LE RAPPORT WORD)
+        # Ces colonnes 'indic_...' sont celles utilisées par generate_automatic_report
+        data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
+        
+        # Correctement servi = Servi ET Norme respectée
+        data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
+        
+        # Marqué = Ménage marqué 'Oui'
+        data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
+        
+        # Information = Informé 'Oui'
+        data['indic_info'] = (data.get('information') == 'Oui').astype(int)
+
+        # 6. Calcul des besoins (Règle CDM 2026)
         if 'nb_personnes' in data.columns:
             data['nb_milda_attendues'] = data['nb_personnes'].apply(DataProcessor.calculate_expected_milda)
+            if 'nb_milda_recues' in data.columns:
+                data['ecart_distribution'] = data['nb_milda_recues'] - data['nb_milda_attendues']
         
-        if 'nb_milda_attendues' in data.columns and 'nb_milda_recues' in data.columns:
-            data['ecart_distribution'] = data['nb_milda_recues'] - data['nb_milda_attendues']
-        
-        # Indicateurs binaires
-        data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
-        data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data['norme'] == 'Oui')).astype(int)
-        data['indic_marque'] = ((data['menage_servi'] == 'Oui') & (data['menage_marque'] == 'Oui')).astype(int)
-        data['indic_info'] = (data['information'] == 'Oui').astype(int)
-        
-        # Conversion des dates
+        # 7. Traitement des dates pour le titre du rapport
         if 'date_enquete' in data.columns:
             data['date_enquete'] = pd.to_datetime(data['date_enquete'], errors='coerce')
         
-        # Statistiques de base
+        # 8. Statistiques pour l'interface Streamlit
         stats = {
             'total_rows': len(data),
             'total_provinces': data['province'].nunique() if 'province' in data.columns else 0,
             'total_districts': data['district'].nunique() if 'district' in data.columns else 0,
             'date_range': (
-                data['date_enquete'].min().strftime('%Y-%m-%d') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A',
-                data['date_enquete'].max().strftime('%Y-%m-%d') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A'
+                data['date_enquete'].min().strftime('%d/%m/%Y') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A',
+                data['date_enquete'].max().strftime('%d/%m/%Y') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A'
             )
         }
         
         return data, stats
         
     except Exception as e:
-        st.error(f"Erreur lors du chargement des données : {str(e)}")
+        st.error(f"Erreur lors du traitement Excel : {str(e)}")
         return pd.DataFrame(), {}
 
 
