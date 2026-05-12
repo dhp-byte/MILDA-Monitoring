@@ -186,7 +186,24 @@ class DataProcessor:
             #return 1
         return "Non"
         #return 0
-    
+
+    @staticmethod
+    def normalize_norme(value):
+        # Sécurité : si on reçoit un objet complexe (Series/List), on prend le premier élément ou on convertit
+        if isinstance(value, (list, np.ndarray)):
+            value = value[0] if len(value) > 0 else np.nan
+            
+        if pd.isna(value) or value == "":
+            return "Non"
+            #return 0
+        
+        val_str = str(value).lower().strip()
+        # Votre nouveau formulaire utilise 'yes'/'no' en interne
+        if val_str in ['Oui – clé de répartition respectée', 'yes', '1', 'true']:
+            return "Oui"
+            #return 1
+        return "Non"
+        #return 0
     @staticmethod
     def calculate_expected_milda(n_persons: float) -> int:
         """Calcule le nombre de MILDA attendues (1 pour 2 personnes)"""
@@ -720,12 +737,13 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     
     # Normalisation Oui/Non
     # Dans process_milda_dataframe
-    cols_to_fix = ['menage_servi', 'menage_marque', 'norme', 'information', 'menage_chef', 'respondant_col', 'sensibilise', 'consentement']
+    cols_to_fix = ['menage_servi', 'menage_marque', 'information', 'menage_chef', 'respondant_col', 'sensibilise', 'consentement']
     for col in cols_to_fix:
         if col in data.columns:
             # On s'assure de ne traiter que des valeurs simples
             data[col] = data[col].astype(str).apply(DataProcessor.normalize_yes_no)
-            
+
+    data['norme'] = data['norme'].apply(DataProcessor.normalize_norme)
     data = data[['consentement'] == 'Oui']
     # Conversions numériques et indicateurs
     for col in ['nb_personnes', 'nb_milda_recues']:
