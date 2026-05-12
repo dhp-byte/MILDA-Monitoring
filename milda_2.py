@@ -635,7 +635,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
             'start': ['start'],
             'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
-            'consentement': ['S1Q01', 'Nous vous demandons de répondre à quelques questions. Notre entretien prendra environ quelques minutes. Êtes-vous d’accord ?']
+            'consentement': ['S1Q01', 'Nous vous demandons de répondre à quelques questions. Notre entretien prendra environ quelques minutes. Êtes-vous d’accord ?'],
             'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
             'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
