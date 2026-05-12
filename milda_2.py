@@ -635,6 +635,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
             'start': ['start'],
             'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
+            'consentement': ['S1Q01', 'Nous vous demandons de répondre à quelques questions. Notre entretien prendra environ quelques minutes. Êtes-vous d’accord ?']
             'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
             'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
@@ -720,15 +721,17 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         coords = data['latitude']
         data['latitude'] = coords.apply(lambda x: x[0] if isinstance(x, list) else None)
         data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) else None)
-
+        
+    
     # Normalisation Oui/Non
     # Dans process_milda_dataframe
-    cols_to_fix = ['menage_servi', 'menage_marque', 'norme', 'information', 'menage_chef', 'respondant_col', 'sensibilise']
+    cols_to_fix = ['menage_servi', 'menage_marque', 'norme', 'information', 'menage_chef', 'respondant_col', 'sensibilise', 'consentement']
     for col in cols_to_fix:
         if col in data.columns:
             # On s'assure de ne traiter que des valeurs simples
             data[col] = data[col].astype(str).apply(DataProcessor.normalize_yes_no)
-
+            
+    data = data['consentement'] == 'Oui'
     # Conversions numériques et indicateurs
     for col in ['nb_personnes', 'nb_milda_recues']:
         if col in data.columns:
