@@ -552,12 +552,6 @@ class ReportGenerator:
         
         return json.dumps(report, ensure_ascii=False, indent=2)
 
-
-import pandas as pd
-import requests
-from io import BytesIO
-import streamlit as st
-
 def load_github_mappings(url):
     """
     Télécharge le fichier Excel depuis GitHub et crée un dictionnaire 
@@ -645,8 +639,9 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
-            'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
-            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
+            #'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
+            #'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
+            'norme': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
