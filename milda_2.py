@@ -726,7 +726,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             # On s'assure de ne traiter que des valeurs simples
             data[col] = data[col].astype(str).apply(DataProcessor.normalize_yes_no)
             
-    data = data['consentement'] == 'Oui'
+    data = data[['consentement'] == 'Oui']
     # Conversions numériques et indicateurs
     for col in ['nb_personnes', 'nb_milda_recues']:
         if col in data.columns:
