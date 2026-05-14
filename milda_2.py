@@ -204,15 +204,14 @@ class DataProcessor:
             #return 1
         return "Non"
         #return 0
+    
     @staticmethod
-    def calculate_expected_milda(n_persons: float) -> int:
-        """Calcule le nombre de MILDA attendues (1 pour 2 personnes)"""
-        try:
-            if pd.isna(n_persons) or n_persons <= 0:
-                return 0
-            return math.ceil(float(n_persons) / 2)
-        except:
-            return 0
+    def calculate_expected_milda(nb_personnes: float) -> int:
+        """Calcule le nombre requis selon votre nouvelle table"""
+        if nb_personnes <= 2: return 1
+        elif nb_personnes <= 4: return 2
+        elif nb_personnes >= 5: return 3  # 5-6 pers = 3, et 7+ pers = 3
+        return 0
     
     @staticmethod
     def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
@@ -766,7 +765,8 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     #norme_ok = (data.get('norme', pd.Series()).astype(str).str.lower() == 'yes')
     #data['indic_correct'] = ((data['indic_servi'] == 1) & norme_ok).astype(int)
     data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
-    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
+    #data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
+    data['indic_correct'] = ((data['norme'] == 'Oui')).astype(int)
     data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
     data['indic_info'] = (data['information'] == 'Oui').astype(int)
 
@@ -2086,7 +2086,7 @@ def add_matplotlib_chart(document, data_series, title, chart_type='bar'):
     if chart_type == 'bar':
         # Création des barres
         data_series.plot(kind='bar', ax=ax, color='#2c3e50', edgecolor='white')
-        ax.set_ylabel('Pourcentage (%)', fontweight='bold')
+        ax.set_ylabel('')
         ax.set_xlabel('')
         
         # AJOUT DES LIBELLÉS (Valeurs au-dessus des barres)
@@ -2194,7 +2194,7 @@ def add_custom_diff_chart(document, data, title):
 
     # Mise en forme
     plt.title(title, pad=20, fontweight='bold')
-    plt.ylabel('Pourcentage (%)')
+    plt.ylabel('')
     plt.xlabel('Écart (Nombre de MILDA)')
     ax.set_ylim(0, max(stats.values) * 1.2) # Espace pour les étiquettes
     plt.tight_layout()
@@ -2228,6 +2228,8 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         st.error("❌ Bibliothèque python-docx non disponible. Installez-la avec: pip install python-docx")
         return None
     data = data.copy()
+    #data_1 = data.copy()
+    #data = data[data['consentement'] == 'Oui']
     
     # Créer le document
     doc = Document()
@@ -2320,18 +2322,13 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     create_table(doc, table_rows, ['Nombre de Différence', 'Effectif', 'Fréquence (%)'])
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
-    # On prépare une série pour le graphique (sans la ligne Total)
-    chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
-    add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-
     doc.add_page_break()
             
     def add_executive_summary(doc, data):
         doc.add_heading('RÉSUMÉ EXÉCUTIF : ALERTES DE PERFORMANCE', level=1)
         
         # 1. Calcul des indicateurs par Centre de Santé (National)
-        cs_performance = data.groupby(['province', 'centre_sante']).agg(
+        cs_performance = data.groupby(['province', 'district']).agg(
             total=('indic_servi', 'count'),
             servis=('indic_servi', 'sum'),
             marques=('indic_marque', 'sum')
@@ -2349,27 +2346,27 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         if not alerte_couverture.empty:
             p = doc.add_paragraph(f"Les {len(alerte_couverture)} centres de santé suivants présentent une couverture insuffisante. Une vérification logistique ou une supervision de proximité est recommandée.")
             
-            table_alert = [['Province', 'Centre de Santé', 'Taux Couverture']]
+            table_alert = [['Province', 'District Sanitaire', 'Taux Couverture']]
             for _, row in alerte_couverture.head(10).iterrows(): # Top 10 des plus critiques
                 table_alert.append([
                     row['province'],
-                    row['centre_sante'],
+                    row['district'],
                     f"{row['taux_couverture']:.1f}%"
                 ])
             create_table(doc, table_alert, table_alert[0]) # Utilise votre fonction create_table
         else:
-            doc.add_paragraph("Félicitations : Tous les centres de santé dépassent 80% de couverture.")
+            doc.add_paragraph("Félicitations : Tous les district dépassent 80% de couverture.")
     
         # --- SECTION : ALERTES MARQUAGE ---
         doc.add_heading('Zones à faible taux de marquage (< 80%)', level=2)
         if not alerte_marquage.empty:
             doc.add_paragraph("Le marquage des ménages est essentiel pour le suivi. Les zones suivantes sont en dessous des standards de qualité :")
             
-            table_m = [['Province', 'Centre de Santé', 'Taux Marquage']]
+            table_m = [['Province', 'District', 'Taux Marquage']]
             for _, row in alerte_marquage.head(10).iterrows():
                 table_m.append([
                     row['province'],
-                    row['centre_sante'],
+                    row['district'],
                     f"{row['taux_marquage']:.1f}%"
                 ])
             create_table(doc, table_m, table_m[0])
@@ -2511,80 +2508,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             doc.add_paragraph(f'Source : Analyse par district pour la province de {prov}').italic = True
             doc.add_page_break()
         
-        # Titre de la section Province
-        #doc.add_heading(f'Analyse : Province de {prov}', level=1)
-        doc.add_heading('Ménages servis en MILDA par Centre de Santé', level=2)
-        
-        if 'centre_sante' in df_prov.columns and not df_prov.empty:
-            # --- GRAPHIQUE PAR PROVINCE ---
-            # Calcul du % de 'Oui' par CS au sein de la province
-            stats_servis = df_prov.groupby('centre_sante')['indic_servi'].mean() * 100
-            
-            if not stats_servis.empty:
-                #add_matplotlib_chart(doc, stats_servis, f'Couverture MILDA - {prov} (%)', 'bar')
-                doc.add_paragraph(f'Graphique : Taux de couverture par CS dans la province de {prov}.').italic = True
-    
-            # --- TABLEAU PAR PROVINCE ---
-            doc.add_heading(f'Tableau : Synthèse des indicateurs - {prov}', level=3)
-            
-            cs_stats = df_prov.groupby('centre_sante').agg(
-                total=('centre_sante', 'count'),
-                servis=('indic_servi', 'sum'),
-                correct=('indic_correct', 'sum')
-            ).reset_index()
-            
-            # Calcul des pourcentages sécurisé
-            cs_stats['pct_servis'] = (100 * cs_stats['servis'] / cs_stats['total']).astype(float).round(1)
-            
-            # Correction du bug ici : 
-            # 1. On remplace les 0 par NaN pour éviter la division par zéro
-            # 2. On force le type en float pour que round() fonctionne
-            # 3. On remplit les vides par 0 à la fin
-            cs_stats['pct_correct'] = (100 * cs_stats['correct'] / cs_stats['servis'].replace(0, np.nan))
-            cs_stats['pct_correct'] = cs_stats['pct_correct'].astype(float).round(1).fillna(0)
-            
-            table_data = []
-            for _, row in cs_stats.iterrows():
-                table_data.append([
-                    str(row['centre_sante']),
-                    int(row['total']),
-                    int(row['servis']),
-                    f"{row['pct_servis']}%",
-                    int(row['correct']),
-                    f"{row['pct_correct']}%"
-                ])
-            
-            # Ligne de Total pour la Province
-            t_total = cs_stats['total'].sum()
-            t_servis = cs_stats['servis'].sum()
-            t_correct = cs_stats['correct'].sum()
-            
-            table_data.append([
-                'TOTAL PROVINCE',
-                t_total,
-                t_servis,
-                f"{round(100 * t_servis / t_total, 1)}%" if t_total > 0 else "0%",
-                t_correct,
-                f"{round(100 * t_correct / t_servis, 1)}%" if t_servis > 0 else "0%"
-            ])
-            
-            # Création du tableau dans Word
-            create_table(doc, table_data, [
-                'Centre de Santé',
-                'Ménages dénombrés',
-                'Ménages servis',
-                '% servis',
-                'Correctement servis',
-                '% correct'
-            ])
-        
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-        
-        # Saut de page après chaque province (optionnel)
-        doc.add_page_break()
-
-        # On suppose que cette partie se trouve à l'intérieur de la boucle : for prov in provinces:
-        # df_prov est déjà filtré pour la province en cours
         
         doc.add_heading(f'Analyse du marquage des ménages - {prov}', level=2)
 
@@ -2641,64 +2564,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
         
-        if 'centre_sante' in df_prov.columns and not df_prov.empty:
-            # 1. GRAPHIQUE DE MARQUAGE (Seulement pour les ménages servis)
-            # On filtre pour ne prendre que les ménages servis dans cette province
-            df_servis_prov = df_prov[df_prov['indic_servi'] == 1]
-            
-            if not df_servis_prov.empty:
-                stats_marquage = df_servis_prov.groupby('centre_sante')['indic_marque'].mean() * 100
-                
-                if not stats_marquage.empty:
-                    #add_matplotlib_chart(doc, stats_marquage, f'Taux de marquage des ménages servis - {prov} (%)', 'bar')
-                    doc.add_paragraph(f'Graphique : Proportion des ménages servis ayant reçu un marquage (Province : {prov}).').italic = True
-        
-            # 2. TABLEAU DÉTAILLÉ DU MARQUAGE
-            doc.add_heading(f'Tableau : Statut du marquage par CS - {prov}', level=3)
-            
-            # Note : Utilisation de 'indic_servi' == 1 pour la cohérence avec vos indicateurs numériques
-            marquage_stats = df_prov[df_prov['indic_servi'] == 1].groupby('centre_sante').agg(
-                servis=('indic_servi', 'count'),
-                marques=('indic_marque', 'sum')
-            ).reset_index()
-            
-            if not marquage_stats.empty:
-                # Calcul du pourcentage par ligne
-                marquage_stats['pct_marques'] = round(100 * marquage_stats['marques'] / marquage_stats['servis'], 1)
-                
-                table_data_marquage = []
-                for _, row in marquage_stats.iterrows():
-                    table_data_marquage.append([
-                        str(row['centre_sante']),
-                        int(row['servis']),
-                        int(row['marques']),
-                        f"{row['pct_marques']}%"
-                    ])
-                
-                # Ligne de Total Province pour le marquage
-                total_servis = marquage_stats['servis'].sum()
-                total_marques = marquage_stats['marques'].sum()
-                pct_total_marques = round(100 * total_marques / total_servis, 1) if total_servis > 0 else 0
-                
-                table_data_marquage.append([
-                    'TOTAL PROVINCE',
-                    total_servis,
-                    total_marques,
-                    f"{pct_total_marques}%"
-                ])
-                
-                # Création du tableau Word
-                create_table(doc, table_data_marquage, [
-                    'Centre de Santé',
-                    'Ménages servis',
-                    'Ménages marqués',
-                    '% marqués'
-                ])
-            else:
-                doc.add_paragraph("Aucune donnée de marquage disponible (aucun ménage servi dans cette province).")
-        
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-        doc.add_page_break()
     
     # ========== ANALYSE DE LA DISTRIBUTION ==========
     doc.add_heading('Analyse de la distribution des moustiquaires', level=1)
@@ -2817,32 +2682,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                 create_table(doc, table_dist_data, ['District Sanitaire', 'Ménages total', 'Ménages informés', '% informés'])
                 doc.add_paragraph(f'Source : CDM-2026 - Province de {prov}').italic = True
     
-            # --- 3. Analyse par Centre de Santé au sein de la Province ---
-            if 'centre_sante' in df_prov.columns and not df_prov.empty:
-                doc.add_heading(f'Détail par Centre de Santé (CS) - {prov}', level=3)
-                
-                cs_sensi = df_prov.groupby('centre_sante').agg(
-                    total=('centre_sante', 'count'),
-                    informes=('indic_info', 'sum')
-                ).reset_index()
-                
-                cs_sensi['pct_informes'] = (100 * cs_sensi['informes'] / cs_sensi['total']).astype(float).round(1)
-                
-                table_cs_data = []
-                for _, row in cs_sensi.iterrows():
-                    table_cs_data.append([
-                        str(row['centre_sante']),
-                        int(row['total']),
-                        int(row['informes']),
-                        f"{row['pct_informes']}%"
-                    ])
-                
-                create_table(doc, table_cs_data, ['Centre de Santé', 'Ménages total', 'Ménages informés', '% informés'])
-                doc.add_paragraph(f'Source : CDM-2026 - Détail CS {prov}').italic = True
-                
-            # Saut de page pour séparer les provinces
-            doc.add_page_break()
-    
     # ========== SECTION : SENSIBILISATION LORS DE LA CAMPAGNE ==========
     doc.add_heading('Sensibilisation sur l\'utilisation correcte lors de la campagne', level=1)
     
@@ -2898,22 +2737,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                 dist_stats['pct'] = (100 * dist_stats['sensi'] / dist_stats['total']).astype(float).round(1)
                 table_dist = [[str(r['district']), int(r['total']), int(r['sensi']), f"{r['pct']}%"] for _, r in dist_stats.iterrows()]
                 create_table(doc, table_dist, ['District', 'Ménages total', 'Ménages sensibilisés', '%'])
-    
-            # --- B. PAR CENTRE DE SANTÉ ---
-            if 'centre_sante' in df_prov.columns:
-                doc.add_heading(f'Détail par Centre de Santé - {prov}', level=3)
-                cs_stats = df_prov.groupby('centre_sante').agg(
-                    total=(info_col, 'count'),
-                    sensi=(info_col, lambda x: x.isin(valeurs_positives).sum())
-                ).reset_index()
-                
-                cs_stats['pct'] = (100 * cs_stats['sensi'] / cs_stats['total']).astype(float).round(1)
-                table_cs = [[str(r['centre_sante']), int(r['total']), int(r['sensi']), f"{r['pct']}%"] for _, r in cs_stats.iterrows()]
-                create_table(doc, table_cs, ['Centre de Santé', 'Ménages total', 'Ménages sensibilisés', '%'])
-    
-            doc.add_page_break()
-    
-  
 
     # Source d'information (source)
     if 'source' in data.columns:
