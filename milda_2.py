@@ -199,7 +199,7 @@ class DataProcessor:
         
         #val_str = str(value).lower().strip()
         # Votre nouveau formulaire utilise 'yes'/'no' en interne
-        if val_str in ['Oui – clé de répartition respectée', 'yes', '1', 'true']:
+        if value in ['Oui – clé de répartition respectée', 'yes', '1', 'true']:
             return "Oui"
             #return 1
         return "Non"
