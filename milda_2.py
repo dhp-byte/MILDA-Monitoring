@@ -2786,72 +2786,14 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     create_table(doc, table_scan, ["Moustiquaire", "Effectif", "Fréquence (%)"])
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
-    # ========== RAISONS NON SCAN & SENSIBILISATION ==========
-    if 'raison_scan' in data.columns:
-    # 1. Nettoyage initial
-        df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')].copy()
     
-    if not df_non_scan.empty:
-        doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
 
-        # 2. LA LISTE BLANCHE : Seuls ces libellés exacts seront conservés
-        # Cela élimine automatiquement les mots isolés comme "absent", "la", "le"
-        motifs_officiels = [
-            "Propriétaire de la moustiquaire absent",
-            "Moustiquaire déjà suspendue / inaccessible",
-            "Le scan prend trop de temps",
-            "Problème avec le téléphone",
-            "Étiquette manquante",
-            "Code QR flou ou trop petit",
-            "Moustiquaire envoyée ailleurs / redistribuée",
-            "Le répondant a refusé l'accès",
-            "Éclairage insuffisant",
-            "Autre (à préciser)",
-            "Étiquette usée"
-        ]
-
-        # 3. FONCTION DE FILTRAGE STRICT
-        def filtrer_motifs(valeur):
-            # On cherche si l'un des motifs officiels est présent dans la cellule
-            # (Gestion des choix multiples KoBo)
-            trouves = []
-            for motif in motifs_officiels:
-                if motif in str(valeur):
-                    trouves.append(motif)
-            return trouves
-
-        # 4. APPLICATION
-        # On extrait uniquement les phrases qui correspondent à notre liste
-        serie_propre = df_non_scan['raison_scan'].apply(filtrer_motifs).explode()
-        
-        # 5. COMPTAGE ET TRI
-        counts = serie_propre.value_counts()
-        total_menages = len(df_non_scan)
-
-        table_raison = []
-        for motif, effectif in counts.items():
-            if motif in motifs_officiels: # Double sécurité
-                pourcentage = (effectif / total_menages) * 100
-                table_raison.append([
-                    str(motif), 
-                    int(effectif), 
-                    f"{pourcentage:.1f}%"
-                ])
-
-        # 6. CRÉATION DU TABLEAU
-        if table_raison:
-            create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
-        else:
-            doc.add_paragraph("Aucun motif correspondant aux catégories officielles n'a été trouvé.")
-            
+    if 'raison' in data.columns:
+        doc.add_heading('Tableau : Raison de non Scannage', level=2)
+        raison_series = data['raison'].str.split(', ').explode().value_counts()
+        table_raison = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in raison_series.items()]
+        create_table(doc, table_raison, ['Raison de non scannage', 'Effectif', '% de moustiquaires'])
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-
-    #if 'raison' in data.columns:
-        #doc.add_heading('Tableau : Raison de non Scannage', level=2)
-        #raison_series = data['raison'].str.split(', ').explode().value_counts()
-        #table_raison = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in raison_series.items()]
-        #create_table(doc, table_raison, ['Raison de non scannage', 'Effectif', '% de moustiquaires'])
-        #doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
         
     # Sauvegarder en mémoire
     output = io.BytesIO()
