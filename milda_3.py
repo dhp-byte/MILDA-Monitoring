@@ -2379,10 +2379,10 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
         # 1. Agrégation des données par Province
         prov_stats = data.groupby('province').agg(
-            nb_menages=('indic_servi', 'count'),
-            servis=('indic_servi', 'sum'),
-            marques=('indic_marque', 'sum'),
-            corrects=('indic_correct', 'sum')
+            nb_menages=('indic_servi', 'value_counts()'),
+            servis=('indic_servi', 'value_counts()'),
+            marques=('indic_marque', 'value_counts()'),
+            corrects=('indic_correct', 'value_counts()')
         ).reset_index()
     
         # 2. Calcul des indicateurs de performance
