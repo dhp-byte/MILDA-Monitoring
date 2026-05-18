@@ -2265,7 +2265,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             for value, count in chef_data.items():
                 freq = round(count / total * 100, 2)
                 table_data.append([value, count, freq])
-            table_data.append(['Total', total, 100.00])
+            table_data.append(['Total', count, 100.00])
             
             create_table(doc, table_data, ['Êtes-vous le Chef de ce ménage ?', 'Effectif', 'Fréquence'])
             doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
@@ -2275,8 +2275,8 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         doc.add_heading('Tableau : Répartition des chefs de ménage par sexe', level=2)
         sexe_counts = data['sexe'].value_counts()
         total_s = len(data)
-        table_sexe = [[v, c, f"{(c/total_s*100):.1f}"] for v, c in sexe_counts.items()]
-        table_sexe.append(['Total', total_s, '100'])
+        table_sexe = [[v, c, f"{(c/sexe_counts*100):.1f}"] for v, c in sexe_counts.items()]
+        table_sexe.append(['Total', sexe_counts, '100'])
         create_table(doc, table_sexe, ['Sexe', 'Effectif', 'Fréquence (%)'])
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
