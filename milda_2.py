@@ -2303,7 +2303,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         return 0
 
     data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
-    data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
+    data['diff_custom'] = data['requis_custom'] - data['nb_milda_recues']
 
     # --- AJOUT DU GRAPHIQUE ---
     doc.add_paragraph("Le graphique ci-dessous présente la répartition des écarts constatés :")
