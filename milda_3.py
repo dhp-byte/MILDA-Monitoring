@@ -2274,7 +2274,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     if 'sexe' in data.columns:
         doc.add_heading('Tableau : Répartition des chefs de ménage par sexe', level=2)
         sexe_counts = data['sexe'].value_counts()
-        total_s = len(data[data['sexe']])
+        total_s = len(data)
         table_sexe = [[v, c, f"{(c/total_s*100):.1f}"] for v, c in sexe_counts.items()]
         table_sexe.append(['Total', total_s, '100'])
         create_table(doc, table_sexe, ['Sexe', 'Effectif', 'Fréquence (%)'])
