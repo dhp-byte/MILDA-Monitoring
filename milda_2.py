@@ -2423,7 +2423,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             f"{int(total_n):,}".replace(',', ' '),
             f"{round(100 * total_s / total_n, 1)}%" if total_n > 0 else "0%",
             f"{round(100 * total_m / total_s, 1)}%" if total_s > 0 else "0%",
-            f"{round(100 * total_c / total_s, 1)}%" if total_s > 0 else "0%"
+            f"{round(100 * total_c / total_n, 1)}%" if total_s > 0 else "0%"
         ])
     
         # 5. Création du tableau
