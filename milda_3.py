@@ -2259,7 +2259,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         chef_col = next((col for col in data.columns if 'chef' in col.lower()), None)
         if chef_col:
             chef_data = data[chef_col].value_counts()
-            total = len(data)
+            total = len(data[data['menage_chef']])
             
             table_data = []
             for value, count in chef_data.items():
@@ -2274,9 +2274,9 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     if 'sexe' in data.columns:
         doc.add_heading('Tableau : Répartition des chefs de ménage par sexe', level=2)
         sexe_counts = data['sexe'].value_counts()
-        total_s = len(data)
-        table_sexe = [[v, c, f"{(c/sexe_counts*100):.1f}"] for v, c in sexe_counts.items()]
-        table_sexe.append(['Total', sexe_counts, '100'])
+        total_s = len(data[data['sexe']])
+        table_sexe = [[v, c, f"{(c/total_s*100):.1f}"] for v, c in sexe_counts.items()]
+        table_sexe.append(['Total', total_s, '100'])
         create_table(doc, table_sexe, ['Sexe', 'Effectif', 'Fréquence (%)'])
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
@@ -2387,8 +2387,8 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
         # 2. Calcul des indicateurs de performance (sécurisé)
         prov_stats['% Couverture'] = (prov_stats['servis'] / prov_stats['nb_menages'] * 100).round(1)
-        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'].replace(0, np.nan) * 100).round(1).fillna(0)
-        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'].replace(0, np.nan) * 100).round(1).fillna(0)
+        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
+        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
     
         # Tri par performance de couverture (du meilleur au moins bon)
         prov_stats = prov_stats.sort_values('% Couverture', ascending=False)
@@ -2428,9 +2428,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     
         # 5. Création du tableau dans le document Word
         create_table(doc, table_data, table_headers)
-        
-        doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
-            
+          
         doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
         # --- AJOUT DU GRAPHIQUE DE COMPARAISON ---
         doc.add_heading('Comparaison visuelle de la couverture par Province (%)', level=2)
