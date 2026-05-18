@@ -2259,7 +2259,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         chef_col = next((col for col in data.columns if 'chef' in col.lower()), None)
         if chef_col:
             chef_data = data[chef_col].value_counts()
-            total = len(data[data['menage_chef']])
+            total = len(data)
             
             table_data = []
             for value, count in chef_data.items():
