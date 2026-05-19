@@ -2998,23 +2998,11 @@ def main():
         if _k not in st.session_state:
             st.session_state[_k] = _v
 
+    # Toutes les phases sont toujours actives (sélection automatique)
+    selected_phases = list(MAPPINGS_URLS.keys())
+
     # --- 1. CONFIGURATION SIDEBAR ---
     with st.sidebar:
-        st.header("⚙️ Configuration des Phases")
-        
-        # Sélecteur multiple pour choisir les phases cibles
-        phases_disponibles = list(MAPPINGS_URLS.keys())
-        selected_phases = st.multiselect(
-            "Phases à analyser/suivre :",
-            options=phases_disponibles,
-            default=["Phase 2"]  # Phase par défaut au démarrage
-        )
-        
-        if not selected_phases:
-            st.warning("⚠️ Veuillez sélectionner au moins une phase.")
-            st.stop()
-            
-        st.divider()
         # Connexion KoBo : déclenchement du wizard multi-étapes
         if st.button("🔗 Connexion KoBoToolbox", use_container_width=True, key="kobo_wizard_open"):
             st.session_state.update(kobo_step=1, kobo_forms=None, kobo_selected={})
