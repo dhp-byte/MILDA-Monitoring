@@ -777,11 +777,37 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
                         # --- LOGIQUE POUR CHOIX UNIQUE ---
                         data[col] = data[col].replace(mappings_dict[list_name])
                 
-    # Traitement spécial GPS pour KoBo (si format liste [lat, long])
-    if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
-        coords = data['latitude']
-        data['latitude'] = coords.apply(lambda x: x[0] if isinstance(x, list) else None)
-        data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) else None)
+    # ── Traitement GPS KoBo (formats multiples) ─────────────────────────────────
+    # Cas 1 : colonne _geolocation contenant une liste [lat, lon, alt, acc]
+    if '_geolocation' in data.columns:
+        def _extract_geo(val, idx):
+            if isinstance(val, list) and len(val) > idx:
+                return val[idx]
+            if isinstance(val, str) and val.strip() not in ('', 'nan', 'None'):
+                parts = val.replace('[','').replace(']','').split(',')
+                try: return float(parts[idx])
+                except Exception: return np.nan
+            return np.nan
+        if 'latitude' not in data.columns or data['latitude'].isna().all():
+            data['latitude']  = data['_geolocation'].apply(lambda x: _extract_geo(x, 0))
+        if 'longitude' not in data.columns or data['longitude'].isna().all():
+            data['longitude'] = data['_geolocation'].apply(lambda x: _extract_geo(x, 1))
+
+    # Cas 2 : colonne latitude contenant une liste [lat, lon, ...]
+    if 'latitude' in data.columns:
+        first_valid = data['latitude'].dropna().iloc[0] if data['latitude'].notna().any() else None
+        if isinstance(first_valid, list):
+            coords = data['latitude']
+            data['latitude']  = coords.apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else np.nan)
+            data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) and len(x) > 1 else np.nan)
+
+    # Cas 3 : colonnes avec préfixe (ex: LES_COORDONNEES_GEOGRAPHIQUES_latitude)
+    for c in data.columns:
+        cl = c.lower()
+        if 'latitude' in cl and 'latitude' not in data.columns:
+            data['latitude'] = pd.to_numeric(data[c], errors='coerce')
+        if 'longitude' in cl and 'longitude' not in data.columns:
+            data['longitude'] = pd.to_numeric(data[c], errors='coerce')
         
     
     # Normalisation Oui/Non
@@ -3526,8 +3552,15 @@ def main():
 
         # ── Résolution data_active / tables_active selon la vue ───────────────
         if vue == "Toutes les phases":
-            data_active   = st.session_state.get('data_all') or st.session_state.data
-            tables_active = st.session_state.get('data_all_tables') or st.session_state.tables
+            data_active   = st.session_state.get('data_all')
+            if data_active is None:
+                data_active = st.session_state.get('data')
+            tables_active = st.session_state.get('data_all_tables')
+            if tables_active is None:
+                tables_active = st.session_state.get('tables')
+            if data_active is None:
+                st.warning("Aucune donnée consolidée disponible. Veuillez charger les données d'abord.")
+                st.stop()
         else:
             key = phase_key_map.get(vue)
             data_active   = st.session_state.get(key)
