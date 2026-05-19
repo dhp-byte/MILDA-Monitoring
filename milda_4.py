@@ -2504,18 +2504,18 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         doc.add_heading('PRINCIPAUX INDICATEURS PAR PROVINCE', level=1)
         doc.add_paragraph("Ce tableau compare la performance globale de chaque province pour l'ensemble des indicateurs clés de la CDM-2026.")
     
-        # 1. Agrégation correcte des données par Province
+        # 1. Agrégation des données par Province
         prov_stats = data.groupby('province').agg(
-            nb_menages=('indic_servi', 'count'),   # Modifié : 'count' compte les lignes
-            servis=('indic_servi', 'sum'),         # Somme des 1 pour les ménages servis
-            marques=('indic_marque', 'sum'),       # Somme des 1 pour les ménages marqués
-            corrects=('indic_correct', 'sum')      # Modifié : 'sum' pour additionner les ménages conformes
+            nb_menages=('indic_servi', 'count'),
+            servis=('indic_servi', 'sum'),
+            marques=('indic_marque', 'sum'),
+            corrects=('indic_correct', 'sum')
         ).reset_index()
     
-        # 2. Calcul des indicateurs de performance (sécurisé)
+        # 2. Calcul des indicateurs de performance
         prov_stats['% Couverture'] = (prov_stats['servis'] / prov_stats['nb_menages'] * 100).round(1)
-        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
-        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
+        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'] * 100).round(1)
+        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'] * 100).round(1)
     
         # Tri par performance de couverture (du meilleur au moins bon)
         prov_stats = prov_stats.sort_values('% Couverture', ascending=False)
@@ -2533,7 +2533,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         for _, row in prov_stats.iterrows():
             table_data.append([
                 str(row['province']),
-                f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage espace pour milliers
+                f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage des milliers
                 f"{row['% Couverture']}%",
                 f"{row['% Marquage']}%",
                 f"{row['% Qualité (Correct)']}%"
@@ -2553,9 +2553,9 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             f"{round(100 * total_c / total_n, 1)}%" if total_s > 0 else "0%"
         ])
     
-        # 5. Création du tableau dans le document Word
+        # 5. Création du tableau
         create_table(doc, table_data, table_headers)
-          
+        
         doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
         # --- AJOUT DU GRAPHIQUE DE COMPARAISON ---
         doc.add_heading('Comparaison visuelle de la couverture par Province (%)', level=2)
