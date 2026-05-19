@@ -3261,27 +3261,51 @@ def main():
             st.markdown(log)
 
         if dfs_k:
-            # Traitement et injection dans le session_state
-            all_dfs = []
+            # ── Traitement : stockage SÉPARÉ par phase ────────────────────────
+            phase_buckets = {}   # {"Phase 1": [df, df, …], "Phase 2": […], …}
+            all_dfs       = []   # consolidation globale
+
             for uid, (fnm, df_raw) in dfs_k.items():
-                # Phase assignée manuellement à l'étape 2b (priorité) ou auto-détectée
-                detected_phase = phase_assignments.get(uid)
-                if not detected_phase:
-                    detected_phase = selected_phases[0]
-                    for p in selected_phases:
-                        if p.lower() in fnm.lower():
-                            detected_phase = p
-                            break
+                detected_phase = phase_assignments.get(uid, selected_phases[0])
                 with st.spinner(f"Traitement de {fnm} ({detected_phase})…"):
                     data_proc, _ = process_milda_dataframe(df_raw)
                 data_proc['phase_app'] = detected_phase
+                phase_buckets.setdefault(detected_phase, []).append(data_proc)
                 all_dfs.append(data_proc)
 
-            consolidated = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+            # Stocker data_phase_1 / data_phase_2 / data_phase_3 individuellement
+            phase_key_map = {
+                "Phase 1": "data_phase_1",
+                "Phase 2": "data_phase_2",
+                "Phase 3": "data_phase_3",
+            }
+            for phase, key in phase_key_map.items():
+                if phase in phase_buckets:
+                    df_phase = pd.concat(phase_buckets[phase], ignore_index=True)
+                    st.session_state[key]              = df_phase
+                    st.session_state[key + "_tables"]  = generate_analysis_tables(df_phase)
+                else:
+                    # Conserver les données déjà en session si la phase n'a pas été rechargée
+                    st.session_state.setdefault(key, None)
+                    st.session_state.setdefault(key + "_tables", None)
+
+            # Consolidation globale (toutes phases)
+            consolidated = pd.concat(all_dfs, ignore_index=True)
+            st.session_state['data_all']        = consolidated
+            st.session_state['data_all_tables'] = generate_analysis_tables(consolidated)
+
+            # Rétrocompatibilité : st.session_state.data = vue consolidée
             st.session_state.data   = consolidated
-            st.session_state.tables = generate_analysis_tables(consolidated)
+            st.session_state.tables = st.session_state['data_all_tables']
+
             st.session_state['kobo_step'] = 0
-            st.success(f"✅ {len(consolidated):,} enregistrements chargés depuis KoBo !")
+
+            # Résumé par phase
+            for phase, dfs in phase_buckets.items():
+                n = sum(len(d) for d in dfs)
+                st.success(f"✅ {phase} — {n:,} enregistrements chargés")
+            st.info(f"📦 Total consolidé : {len(consolidated):,} enregistrements")
+
             if st.button("Ouvrir le Dashboard →", use_container_width=True, key="k3_open"):
                 st.rerun()
         else:
@@ -3294,56 +3318,135 @@ def main():
     # --- 5. LOGIQUE IMPORT EXCEL ---
     if uploaded_files and st.session_state.data is None:
         with st.spinner("🔄 Traitement et consolidation des fichiers Excel..."):
-            all_dfs = []
+            phase_buckets_xl = {}
+            all_dfs_xl = []
             for file in uploaded_files:
                 df_temp, _ = load_and_process_data(file)
                 if not df_temp.empty:
-                    # Identification de la phase selon le nom du fichier injecté
                     detected_phase = selected_phases[0]
                     for p in selected_phases:
                         if p.lower() in file.name.lower():
                             detected_phase = p
                             break
                     df_temp['phase_app'] = detected_phase
-                    all_dfs.append(df_temp)
-            
-            if all_dfs:
-                consolidated_data = pd.concat(all_dfs, ignore_index=True)
-                st.session_state.data = consolidated_data
-                st.session_state.tables = generate_analysis_tables(consolidated_data)
+                    phase_buckets_xl.setdefault(detected_phase, []).append(df_temp)
+                    all_dfs_xl.append(df_temp)
+
+            if all_dfs_xl:
+                phase_key_map = {
+                    "Phase 1": "data_phase_1",
+                    "Phase 2": "data_phase_2",
+                    "Phase 3": "data_phase_3",
+                }
+                for phase, key in phase_key_map.items():
+                    if phase in phase_buckets_xl:
+                        df_p = pd.concat(phase_buckets_xl[phase], ignore_index=True)
+                        st.session_state[key]             = df_p
+                        st.session_state[key + "_tables"] = generate_analysis_tables(df_p)
+                    else:
+                        st.session_state.setdefault(key, None)
+                        st.session_state.setdefault(key + "_tables", None)
+
+                consolidated_data = pd.concat(all_dfs_xl, ignore_index=True)
+                st.session_state['data_all']        = consolidated_data
+                st.session_state['data_all_tables'] = generate_analysis_tables(consolidated_data)
+                st.session_state.data   = consolidated_data
+                st.session_state.tables = st.session_state['data_all_tables']
                 st.rerun()
 
     # --- 6. AFFICHAGE DES ONGLETS (Si données présentes) ---
-    if st.session_state.data is not None:
-        data_full = st.session_state.data
 
-        # Bouton pour vider le cache
+    # ── Déterminer quelles phases sont disponibles ────────────────────────────
+    phase_key_map = {
+        "Phase 1": "data_phase_1",
+        "Phase 2": "data_phase_2",
+        "Phase 3": "data_phase_3",
+    }
+    phases_chargees = [p for p, k in phase_key_map.items()
+                       if st.session_state.get(k) is not None]
+    any_data = bool(phases_chargees) or st.session_state.data is not None
+
+    if any_data:
+        # ── Bouton effacer ────────────────────────────────────────────────────
         if st.sidebar.button("🗑️ Effacer les données de l'application"):
-            st.session_state.data = None
-            st.session_state.tables = None
+            for k in ['data', 'tables', 'data_all', 'data_all_tables',
+                      'data_phase_1', 'data_phase_1_tables',
+                      'data_phase_2', 'data_phase_2_tables',
+                      'data_phase_3', 'data_phase_3_tables']:
+                st.session_state.pop(k, None)
             st.rerun()
 
-        # Filtre d'affichage dynamique en haut de page si plusieurs phases sont présentes
-        st.markdown(f"### 📊 Analyse consolidée : {', '.join(selected_phases)}")
-        
-        if 'phase_app' in data_full.columns:
-            options_filtre = ["Toutes les phases"] + list(data_full['phase_app'].unique())
-            filtre_phase = st.radio("Filtrer l'affichage dynamique :", options=options_filtre, horizontal=True)
-            
-            if filtre_phase != "Toutes les phases":
-                data_active = data_full[data_full['phase_app'] == filtre_phase].copy()
-                tables_active = generate_analysis_tables(data_active)
-            else:
-                data_active = data_full.copy()
-                tables_active = st.session_state.tables
-        else:
-            data_active = data_full.copy()
-            tables_active = st.session_state.tables
+        # ── Sélecteur de phase ────────────────────────────────────────────────
+        st.markdown("---")
+        options_vue = phases_chargees.copy()
+        if len(phases_chargees) > 1:
+            options_vue += ["Toutes les phases"]
 
-        # Menu à onglets principal
+        # Icônes et couleurs par option
+        phase_icons = {
+            "Phase 1": "🔵", "Phase 2": "🟢", "Phase 3": "🟠",
+            "Toutes les phases": "🌐"
+        }
+        phase_colors = {
+            "Phase 1": "#3b82f6", "Phase 2": "#10b981",
+            "Phase 3": "#f59e0b", "Toutes les phases": "#6366f1"
+        }
+
+        # Affichage en colonnes-boutons pour choisir la vue
+        st.markdown("#### 📊 Choisir la vue à afficher :")
+        btn_cols = st.columns(len(options_vue))
+        if 'vue_active' not in st.session_state or st.session_state.vue_active not in options_vue:
+            st.session_state.vue_active = options_vue[0]
+
+        for i, opt in enumerate(options_vue):
+            with btn_cols[i]:
+                color  = phase_colors.get(opt, "#6b7280")
+                icon   = phase_icons.get(opt, "📊")
+                is_sel = st.session_state.vue_active == opt
+                border = f"3px solid {color}" if is_sel else "1px solid #e2e8f0"
+                bg     = f"{color}18" if is_sel else "white"
+                st.markdown(
+                    f"<div style='border:{border};background:{bg};border-radius:10px;"
+                    f"padding:.6rem;text-align:center;'>"
+                    f"<span style='font-size:1.4rem;'>{icon}</span><br>"
+                    f"<span style='font-size:.85rem;font-weight:{'700' if is_sel else '400'};"
+                    f"color:{color if is_sel else '#374151'};'>{opt}</span></div>",
+                    unsafe_allow_html=True
+                )
+                if st.button(f"Voir {opt}", key=f"vue_btn_{i}", use_container_width=True):
+                    st.session_state.vue_active = opt
+                    st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        vue = st.session_state.vue_active
+
+        # ── Résolution data_active / tables_active selon la vue ───────────────
+        if vue == "Toutes les phases":
+            data_active   = st.session_state.get('data_all') or st.session_state.data
+            tables_active = st.session_state.get('data_all_tables') or st.session_state.tables
+        else:
+            key = phase_key_map.get(vue)
+            data_active   = st.session_state.get(key)
+            tables_active = st.session_state.get(key + "_tables")
+            if data_active is None:
+                st.warning(f"Aucune donnée disponible pour {vue}.")
+                st.stop()
+
+        color_vue = phase_colors.get(vue, "#6366f1")
+        icon_vue  = phase_icons.get(vue, "📊")
+        n_rec     = len(data_active) if data_active is not None else 0
+        st.markdown(
+            f"<div style='background:{color_vue}12;border-left:4px solid {color_vue};"
+            f"border-radius:8px;padding:.6rem 1rem;margin-bottom:1rem;'>"
+            f"<b style='color:{color_vue};'>{icon_vue} {vue}</b>"
+            f" &nbsp;·&nbsp; <span style='color:#374151;'>{n_rec:,} enregistrements</span></div>",
+            unsafe_allow_html=True
+        )
+
+        # ── Menu à onglets ────────────────────────────────────────────────────
         tabs = st.tabs([
-            "🏠 Dashboard", "🔍 Analyse", "🗺️ Cartographie", 
-            "🏃 Suivi Agents", "🛡️ Qualité", "📊 Statistiques", 
+            "🏠 Dashboard", "🔍 Analyse", "🗺️ Cartographie",
+            "🏃 Suivi Agents", "🛡️ Qualité", "📊 Statistiques",
             "📥 Export", "📥 Rapport Final"
         ])
 
@@ -3357,11 +3460,11 @@ def main():
         with tabs[7]:
             st.markdown("## 📊 Rapport de Synthèse Automatique")
             download_automatic_report_button(data_active, tables_active)
-    
+
     else:
         # Écran d'accueil informatif
         st.info("👆 Connectez-vous à KoBo ou importez un ou plusieurs fichiers Excel (Sidebar) pour générer les analyses.")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### 📋 Structure attendue")
