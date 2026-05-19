@@ -3218,7 +3218,7 @@ def main():
                         detected_phase = p
                         break
                 with st.spinner(f"Traitement de {fnm}…"):
-                    data_proc, _ = process_milda_dataframe(df_raw, st.session_state.mappings)
+                    data_proc, _ = process_milda_dataframe(df_raw)
                 data_proc['phase_app'] = detected_phase
                 all_dfs.append(data_proc)
 
