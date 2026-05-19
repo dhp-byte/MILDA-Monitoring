@@ -2886,53 +2886,94 @@ def download_automatic_report_button(data: pd.DataFrame, tables: dict):
                 else:
                     st.error("❌ Erreur lors de la génération du rapport")
 
-def get_kobo_token(url, username, password):
-    """Récupère le jeton API à partir des identifiants"""
+################################################################################
+# INTÉGRATION KOBO - FONCTIONS ROBUSTES
+################################################################################
+
+KOBO_SERVERS = {
+    "KoBoToolbox Global — kf.kobotoolbox.org": "https://kf.kobotoolbox.org",
+    "OCHA Humanitarian — kobo.humanitarianresponse.info": "https://kobo.humanitarianresponse.info",
+    "Serveur personnalisé…": "custom",
+}
+
+def kobo_get_token(username, password, base_url):
+    """Récupère le token API KoBo via Basic Auth"""
+    url = f"{base_url}/token/?format=json"
     try:
-        # L'endpoint pour obtenir le token via Basic Auth
-        token_url = f"{url}/token/?format=json"
-        response = requests.get(token_url, auth=(username, password))
-        if response.status_code == 200:
-            return response.json().get('token')
-        else:
-            st.error(f"Erreur d'authentification ({response.status_code}) : Vérifiez vos identifiants.")
-            return None
+        r = requests.get(url, auth=(username, password), timeout=20)
+        r.raise_for_status()
+        return r.json().get("token"), None
     except Exception as e:
-        st.error(f"Erreur de connexion : {e}")
-        return None    
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        if code == 401:
+            return None, "Identifiants KoBoToolbox invalides."
+        return None, str(e)
+
+def kobo_list_forms(token, base_url):
+    """Liste tous les formulaires de type 'survey' disponibles"""
+    url = f"{base_url}/api/v2/assets/?asset_type=survey&format=json"
+    headers = {"Authorization": f"Token {token}"}
+    try:
+        r = requests.get(url, headers=headers, timeout=25)
+        r.raise_for_status()
+        data = r.json()
+        forms = []
+        for a in data.get("results", []):
+            forms.append({
+                "uid":         a.get("uid", ""),
+                "name":        a.get("name", "Sans nom"),
+                "submissions": a.get("deployment__submission_count", 0),
+                "owner":       a.get("owner__username", ""),
+                "modified":    str(a.get("date_modified", ""))[:10],
+            })
+        return forms, None
+    except Exception as e:
+        return None, str(e)
+
+def kobo_download_data(token, uid, base_url):
+    """Télécharge toutes les soumissions d'un formulaire (pagination automatique)"""
+    headers = {"Authorization": f"Token {token}"}
+    all_results = []
+    next_url = f"{base_url}/api/v2/assets/{uid}/data/?format=json&limit=1000"
+    try:
+        while next_url:
+            r = requests.get(next_url, headers=headers, timeout=60)
+            r.raise_for_status()
+            payload = r.json()
+            batch = payload.get("results", [])
+            all_results.extend(batch)
+            next_url = payload.get("next")
+        if not all_results:
+            return pd.DataFrame(), None
+        df = pd.json_normalize(all_results)
+        df.columns = [c.split("/")[-1].lstrip("_") for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
+        return df, None
+    except Exception as e:
+        return None, str(e)
+
+def get_kobo_token(url, username, password):
+    """Alias de compatibilité ascendante"""
+    token, _ = kobo_get_token(username, password, url)
+    return token
 
 def process_raw_kobo_data(df):
     """Applique la logique de calcul des indicateurs sur les données brutes"""
-    # Normalisation Oui/Non (utilise votre classe DataProcessor existante)
     yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information']
     for col in yes_no_cols:
         if col in df.columns:
             df[col] = df[col].apply(DataProcessor.normalize_yes_no)
-    
-    # Conversion numérique
     for col in ['nb_personnes', 'nb_milda_recues']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    # Calcul des indicateurs attendus par votre Dashboard 
-    
     if 'nb_personnes' in df.columns:
         df['nb_milda_attendues'] = df['nb_personnes'].apply(DataProcessor.calculate_expected_milda)
-    
-    # GÉNÉRATION DES COLONNES MANQUANTES (Cause de la KeyError)
-    df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int) if 'menage_servi' in df.columns else 0
-    df['indic_correct'] = (df['norme'] == 'Oui').astype(int) if 'norme' in df.columns else 0
-    df['indic_marque'] = (df['menage_marque'] == 'Oui').astype(int) if 'menage_marque' in df.columns else 0
-    df['indic_info'] = (df['information'] == 'Oui').astype(int) if 'information' in df.columns else 0
-    #df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int)
-    #df['indic_correct'] = (df.get('norme') == 'Oui').astype(int)
-    #df['indic_marque'] = (df.get('menage_marque') == 'Oui').astype(int)
-    #df['indic_info'] = (df.get('information') == 'Oui').astype(int)
-    
-    # Calcul des écarts pour la page analyse
+    df['indic_servi']   = (df['menage_servi'].eq('Oui')).astype(int)  if 'menage_servi'  in df.columns else 0
+    df['indic_correct'] = (df['norme'].eq('Oui')).astype(int)         if 'norme'         in df.columns else 0
+    df['indic_marque']  = (df['menage_marque'].eq('Oui')).astype(int) if 'menage_marque' in df.columns else 0
+    df['indic_info']    = (df['information'].eq('Oui')).astype(int)   if 'information'   in df.columns else 0
     if 'nb_milda_attendues' in df.columns and 'nb_milda_recues' in df.columns:
         df['ecart_distribution'] = df['nb_milda_recues'] - df['nb_milda_attendues']
-
     return df, {"total_rows": len(df)}
 ################################################################################
 # APPLICATION PRINCIPALE
@@ -2952,14 +2993,10 @@ def main():
     }
     
     # Initialisation des variables de session indispensables
-    if 'kobo_token' not in st.session_state:
-        st.session_state.kobo_token = None
-    if 'data' not in st.session_state:
-        st.session_state.data = None
-    if 'tables' not in st.session_state:
-        st.session_state.tables = None
-    if 'mappings' not in st.session_state:
-        st.session_state.mappings = {}
+    for _k, _v in [('kobo_token', None), ('kobo_step', 0), ('kobo_forms', None),
+                   ('kobo_selected', {}), ('data', None), ('tables', None), ('mappings', {})]:
+        if _k not in st.session_state:
+            st.session_state[_k] = _v
 
     # --- 1. CONFIGURATION SIDEBAR ---
     with st.sidebar:
@@ -2978,24 +3015,27 @@ def main():
             st.stop()
             
         st.divider()
-        st.header("🔑 Connexion KoBo")
-        server_base = st.selectbox("Serveur", 
-                                  ["https://kf.kobotoolbox.org", "https://kobo.humanitarianresponse.info"])
-        
-        username = st.text_input("Nom d'utilisateur")
-        password = st.text_input("Mot de passe", type="password")
-        connect_button = st.button("Se connecter au compte")
-        
+        # Connexion KoBo : déclenchement du wizard multi-étapes
+        if st.button("🔗 Connexion KoBoToolbox", use_container_width=True, key="kobo_wizard_open"):
+            st.session_state.update(kobo_step=1, kobo_forms=None, kobo_selected={})
+            st.rerun()
+        if st.session_state.get('kobo_token'):
+            st.success("✅ KoBo connecté")
+            if st.button("🔓 Déconnecter KoBo", key="kobo_logout"):
+                for k in ['kobo_token', 'kobo_base_url', 'kobo_username', 'kobo_step',
+                          'kobo_forms', 'kobo_selected']:
+                    st.session_state.pop(k, None)
+                st.rerun()
+
         st.divider()
-        st.header("📂 Ou Import Excel")
+        st.header("📂 Import Excel")
         uploaded_files = st.file_uploader(
-            "Choisir un ou plusieurs fichiers Excel", 
-            type=['xlsx', 'xls'], 
+            "Choisir un ou plusieurs fichiers Excel",
+            type=['xlsx', 'xls'],
             accept_multiple_files=True
         )
 
     # --- 2. CHARGEMENT DYNAMIQUE DES MAPPINGS GITHUB EN FONCTION DES PHASES ---
-    # On ne recharge le référentiel que si les phases sélectionnées ont changé
     current_mappings_key = "-".join(sorted(selected_phases))
     if st.session_state.get('last_mappings_key') != current_mappings_key:
         with st.spinner("Chargement et fusion des référentiels cartographiques..."):
@@ -3004,93 +3044,197 @@ def main():
                 url = MAPPINGS_URLS.get(phase)
                 if url:
                     try:
-                        # Appel à votre logique de téléchargement
                         response = requests.get(url, timeout=15)
                         if response.status_code == 200:
                             df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choix', dtype=str)
                             df_choices.columns = df_choices.columns.str.strip()
                             df_choices = df_choices.dropna(subset=['list_name', 'value'])
-                            
                             for list_name in df_choices['list_name'].unique():
                                 clean_list_key = str(list_name).strip()
                                 subset = df_choices[df_choices['list_name'] == list_name]
                                 phase_dict = dict(zip(subset['value'].str.strip(), subset['label'].str.strip()))
-                                
-                                # Fusionner sans écraser les autres codes existants
                                 if clean_list_key in combined_mappings:
                                     combined_mappings[clean_list_key].update(phase_dict)
                                 else:
                                     combined_mappings[clean_list_key] = phase_dict
                     except Exception as e:
                         st.sidebar.error(f"Erreur dictionnaire {phase} : {e}")
-            
             st.session_state.mappings = combined_mappings
             st.session_state.last_mappings_key = current_mappings_key
-            st.sidebar.success(f"✅ {len(combined_mappings)} listes de correspondances fusionnées.")
+            st.sidebar.success(f"✅ {len(combined_mappings)} listes fusionnées.")
 
-    # --- 3. LOGIQUE DE CONNEXION KOBO ---
-    if connect_button and username and password:
-        with st.spinner("Authentification en cours..."):
-            token = get_kobo_token(server_base, username, password)
-            if token:
-                st.session_state.kobo_token = token
-                st.success("✅ Connexion réussie !")
+    # --- 3. WIZARD KOBO MULTI-ÉTAPES ---
+    kobo_step = st.session_state.get('kobo_step', 0)
 
-    # --- 4. LOGIQUE D'EXTRACTION KOBO (PAGINATION ACTIVE) ---
-    if st.session_state.kobo_token:
-        headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
-        try:
-            assets_url = f"{server_base}/api/v2/assets.json"
-            res_assets = requests.get(assets_url, headers=headers)
-            
-            if res_assets.status_code == 200:
-                assets_data = res_assets.json().get('results', [])
-                forms = {a['name']: a['uid'] for a in assets_data if a['asset_type'] == 'survey'}
-                
-                selected_form = st.selectbox("Choisir le formulaire KoBo :", ["-- Sélectionner --"] + list(forms.keys()))
-                
-                if selected_form != "-- Sélectionner --":
-                    if st.button("📥 Charger la base complète (10 000+ enregistrements)"):
-                        with st.spinner('Extraction en cours... (Patientez pendant la récupération des pages)'):
-                            uid = forms[selected_form]
-                            all_results = []
-                            next_url = f"{server_base}/api/v2/assets/{uid}/data.json?page_size=1000"
-                            
-                            while next_url:
-                                res_data = requests.get(next_url, headers=headers)
-                                if res_data.status_code == 200:
-                                    payload = res_data.json()
-                                    batch = payload.get('results', [])
-                                    all_results.extend(batch)
-                                    next_url = payload.get('next')
-                                else:
-                                    st.error(f"Erreur lors de la pagination : {res_data.status_code}")
-                                    break
-                            
-                            if all_results:
-                                df_raw = pd.DataFrame(all_results)
-                                
-                                # Détection automatique de la phase via le nom du formulaire KoBo
-                                detected_phase = selected_phases[0] # Valeur par défaut
-                                for p in selected_phases:
-                                    if p.lower() in selected_form.lower():
-                                        detected_phase = p
-                                        break
-                                
-                                # Traitement du DataFrame en lui injectant le dictionnaire global fusionné
-                                data, stats = process_milda_dataframe(df_raw, st.session_state.mappings) 
-                                data['phase_app'] = detected_phase
-                                
-                                st.session_state.data = data
-                                st.session_state.tables = generate_analysis_tables(data)
-                                st.success(f"✅ {len(data)} enregistrements chargés pour la {detected_phase} !")
-                                st.rerun()
-                            else:
-                                st.warning("Le formulaire sélectionné ne contient aucune donnée.")
+    # ÉTAPE 1 : Authentification
+    if kobo_step == 1:
+        st.markdown("---")
+        st.markdown("### 🔑 Connexion KoBoToolbox — Étape 1/3 : Authentification")
+        col_srv, col_u, col_p = st.columns([2, 1, 1])
+        with col_srv:
+            srv_choice = st.selectbox("Serveur KoBo", list(KOBO_SERVERS.keys()), key="kobo_srv")
+            base_url = KOBO_SERVERS[srv_choice]
+            if base_url == "custom":
+                base_url = st.text_input("URL du serveur personnalisé", placeholder="https://votre-kobo.org", key="kobo_cust")
+        with col_u:
+            kobo_u = st.text_input("Nom d'utilisateur", placeholder="utilisateur", key="kobo_u")
+        with col_p:
+            kobo_p = st.text_input("Mot de passe", type="password", placeholder="••••••••", key="kobo_p")
+
+        st.info("🔒 Les identifiants sont stockés uniquement en session navigateur et effacés à la déconnexion.")
+        ca, cb = st.columns([3, 1])
+        with ca:
+            if st.button("Se connecter →", use_container_width=True, key="kobo_connect"):
+                if not kobo_u or not kobo_p:
+                    st.error("Veuillez saisir votre nom d'utilisateur et votre mot de passe.")
+                elif not base_url or base_url == "custom":
+                    st.error("Veuillez saisir une URL de serveur valide.")
+                else:
+                    with st.spinner("Authentification en cours…"):
+                        token, err = kobo_get_token(kobo_u, kobo_p, base_url)
+                    if err:
+                        st.error(f"❌ {err}")
+                    else:
+                        st.session_state.update(kobo_token=token, kobo_base_url=base_url,
+                                                kobo_username=kobo_u, kobo_step=2)
+                        st.rerun()
+        with cb:
+            if st.button("← Annuler", key="kobo_cancel1"):
+                st.session_state['kobo_step'] = 0
+                st.rerun()
+        st.stop()
+
+    # ÉTAPE 2 : Sélection des formulaires
+    elif kobo_step == 2:
+        token    = st.session_state.get('kobo_token', '')
+        base_url = st.session_state.get('kobo_base_url', '')
+        kuser    = st.session_state.get('kobo_username', '')
+
+        st.markdown("---")
+        st.markdown(f"### 📋 Connexion KoBoToolbox — Étape 2/3 : Sélection des formulaires")
+        st.caption(f"Connecté en tant que **{kuser}** sur {base_url}")
+
+        if 'kobo_forms' not in st.session_state or st.session_state.kobo_forms is None:
+            with st.spinner("Récupération de la liste des formulaires…"):
+                forms, err = kobo_list_forms(token, base_url)
+            if err:
+                st.error(f"❌ {err}")
+                if st.button("← Retour", key="k2b_err"):
+                    st.session_state['kobo_step'] = 1
+                    st.rerun()
+                st.stop()
+            st.session_state['kobo_forms'] = forms or []
+
+        forms = st.session_state.get('kobo_forms', [])
+        if not forms:
+            st.warning("Aucun formulaire trouvé. Vérifiez vos accès KoBo.")
+            if st.button("← Retour", key="k2b_empty"):
+                st.session_state['kobo_step'] = 1
+                st.rerun()
+            st.stop()
+
+        search   = st.text_input("🔍 Filtrer les formulaires par nom", placeholder="Rechercher…", key="fsearch")
+        filtered = [f for f in forms if search.lower() in f["name"].lower()] if search else forms
+        st.caption(f"{len(filtered)} formulaire(s) affiché(s)")
+
+        selected = st.session_state.get('kobo_selected', {})
+        for form in filtered:
+            uid  = form["uid"]
+            name = form["name"]
+            subs = form["submissions"]
+            owner = form["owner"]
+            mod  = form["modified"]
+            cc, ci = st.columns([0.05, 0.95])
+            with cc:
+                checked = st.checkbox("", value=selected.get(uid, False), key=f"chk_{uid}")
+                selected[uid] = checked
+            with ci:
+                color = "#10b981" if subs > 0 else "#64748B"
+                st.markdown(
+                    f"**📋 {name}** &nbsp;&nbsp;"
+                    f"<span style='color:{color};font-size:.85rem;'>{subs:,} soumissions</span>"
+                    f"<br><small>UID: `{uid}` · Propriétaire: {owner} · Modifié: {mod}</small>",
+                    unsafe_allow_html=True
+                )
+        st.session_state['kobo_selected'] = selected
+
+        n_sel = sum(1 for v in selected.values() if v)
+        ca2, cb2, cc2 = st.columns([1, 2, 1])
+        with ca2:
+            if st.button("← Retour", key="k2_back"):
+                st.session_state.pop('kobo_forms', None)
+                st.session_state['kobo_step'] = 1
+                st.rerun()
+        with cb2:
+            st.markdown(f"<div style='text-align:center;padding:.5rem;'><b>{n_sel}</b> formulaire(s) sélectionné(s)</div>", unsafe_allow_html=True)
+        with cc2:
+            if st.button(f"Charger {n_sel} →", use_container_width=True, key="k2_load", disabled=(n_sel == 0)):
+                st.session_state['kobo_step'] = 3
+                st.rerun()
+        st.stop()
+
+    # ÉTAPE 3 : Téléchargement et traitement
+    elif kobo_step == 3:
+        token    = st.session_state.get('kobo_token', '')
+        base_url = st.session_state.get('kobo_base_url', '')
+        forms    = st.session_state.get('kobo_forms', [])
+        selected = st.session_state.get('kobo_selected', {})
+        sel_uids = [u for u, v in selected.items() if v]
+        fnames   = {f["uid"]: f["name"] for f in forms}
+
+        st.markdown("---")
+        st.markdown(f"### ⬇️ Connexion KoBoToolbox — Étape 3/3 : Téléchargement")
+        st.caption(f"Téléchargement de {len(sel_uids)} formulaire(s) avec pagination complète…")
+
+        pb   = st.progress(0)
+        stat = st.empty()
+        dfs_k = {}; logs = []
+
+        for i, uid in enumerate(sel_uids):
+            nm = fnames.get(uid, uid)
+            pb.progress(i / len(sel_uids), text=f"Téléchargement : {nm}…")
+            stat.info(f"⏳ En cours : {nm}…")
+            df, err = kobo_download_data(token, uid, base_url)
+            if err:
+                logs.append(f"❌ **{nm}** — {err}")
             else:
-                st.error("Impossible de récupérer la liste des projets. Vérifiez vos identifiants.")
-        except Exception as e:
-            st.error(f"Erreur technique KoBo : {e}")
+                dfs_k[nm] = df if df is not None else pd.DataFrame()
+                n_rec = len(df) if df is not None else 0
+                n_col = len(df.columns) if df is not None else 0
+                logs.append(f"✅ **{nm}** — {n_rec:,} enregistrements, {n_col} champs")
+
+        pb.progress(1.0, text="Terminé !")
+        stat.empty()
+        for log in logs:
+            st.markdown(log)
+
+        if dfs_k:
+            # Traitement et injection dans le session_state
+            all_dfs = []
+            for fnm, df_raw in dfs_k.items():
+                detected_phase = selected_phases[0]
+                for p in selected_phases:
+                    if p.lower() in fnm.lower():
+                        detected_phase = p
+                        break
+                with st.spinner(f"Traitement de {fnm}…"):
+                    data_proc, _ = process_milda_dataframe(df_raw, st.session_state.mappings)
+                data_proc['phase_app'] = detected_phase
+                all_dfs.append(data_proc)
+
+            consolidated = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+            st.session_state.data   = consolidated
+            st.session_state.tables = generate_analysis_tables(consolidated)
+            st.session_state['kobo_step'] = 0
+            st.success(f"✅ {len(consolidated):,} enregistrements chargés depuis KoBo !")
+            if st.button("Ouvrir le Dashboard →", use_container_width=True, key="k3_open"):
+                st.rerun()
+        else:
+            st.error("Aucune donnée chargée. Vérifiez les permissions sur les formulaires sélectionnés.")
+            if st.button("← Recommencer", key="k3_reset"):
+                st.session_state['kobo_step'] = 0
+                st.rerun()
+        st.stop()
 
     # --- 5. LOGIQUE IMPORT EXCEL ---
     if uploaded_files and st.session_state.data is None:
