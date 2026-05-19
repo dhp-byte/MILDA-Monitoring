@@ -627,7 +627,9 @@ def load_github_mappings(url):
     except Exception as e:
         st.error(f"❌ Une erreur inattendue est survenue : {e}")
         return None
- def load_multiple_github_mappings(selected_phases: List[str]) -> Dict:
+
+
+def load_multiple_github_mappings(selected_phases: List[str]) -> Dict:
     """
     Télécharge et fusionne les dictionnaires de mapping pour toutes les phases sélectionnées.
     """
