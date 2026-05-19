@@ -834,7 +834,11 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
     # Timestamp de fin (utilisé par page_agent_tracking)
     if 'end_dt' not in data.columns:
         if 'heure_interview' in data.columns:
-            data['end_dt'] = pd.to_datetime(data['heure_interview'], errors='coerce')
+            # Conversion tolérante : format=mixed gère les valeurs hétérogènes
+            data['end_dt'] = pd.to_datetime(
+                data['heure_interview'].astype(str).str.strip(),
+                format='mixed', dayfirst=True, errors='coerce'
+            )
         elif 'date_enquete' in data.columns:
             data['end_dt'] = data['date_enquete']
         else:
