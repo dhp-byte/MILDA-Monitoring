@@ -15,8 +15,11 @@ import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import simplekml
+import random
 from datetime import datetime, timedelta
 import io
+import os
 import zipfile
 import re
 import math
@@ -167,38 +170,48 @@ class DataProcessor:
     """Classe pour le traitement avancé des données"""
     
     @staticmethod
-    def normalize_yes_no(value) -> Optional[str]:
-        """Normalise les réponses Oui/Non avec gestion robuste"""
-        # CORRECTION : si value est une liste/array (cas KoBo), prendre le premier élément
+    def normalize_yes_no(value):
+        # Sécurité : si on reçoit un objet complexe (Series/List), on prend le premier élément ou on convertit
         if isinstance(value, (list, np.ndarray)):
-            value = value[0] if len(value) > 0 else None
+            value = value[0] if len(value) > 0 else np.nan
+            
+        if pd.isna(value) or value == "":
+            return "Non"
+            #return 0
         
-        try:
-            if pd.isna(value):
-                return None
-        except (TypeError, ValueError):
-            # pd.isna() échoue sur certains types complexes → on convertit en str
-            pass
+        val_str = str(value).lower().strip()
+        # Votre nouveau formulaire utilise 'yes'/'no' en interne
+        if val_str in ['oui', 'yes', '1', 'true']:
+            return "Oui"
+            #return 1
+        return "Non"
+        #return 0
+
+    @staticmethod
+    def normalize_norme(value):
+        # Sécurité : si on reçoit un objet complexe (Series/List), on prend le premier élément ou on convertit
+        if isinstance(value, (list, np.ndarray)):
+            value = value[0] if len(value) > 0 else np.nan
+            
+        if pd.isna(value) or value == "":
+            return "Non"
+            #return 0
         
-        value_str = str(value).strip().lower()
-        yes_values = ['oui', 'yes', 'y', '1', 'true', 'o']
-        no_values = ['non', 'no', 'n', '0', 'false']
-        
-        if value_str in yes_values:
-            return 'Oui'
-        elif value_str in no_values:
-            return 'Non'
-        return None
+        #val_str = str(value).lower().strip()
+        # Votre nouveau formulaire utilise 'yes'/'no' en interne
+        if value in ['Oui – clé de répartition respectée', 'yes', '1', 'true']:
+            return "Oui"
+            #return 1
+        return "Non"
+        #return 0
     
     @staticmethod
-    def calculate_expected_milda(n_persons: float) -> int:
-        """Calcule le nombre de MILDA attendues (1 pour 2 personnes)"""
-        try:
-            if pd.isna(n_persons) or n_persons <= 0:
-                return 0
-            return math.ceil(float(n_persons) / 2)
-        except:
-            return 0
+    def calculate_expected_milda(nb_personnes: float) -> int:
+        """Calcule le nombre requis selon votre nouvelle table"""
+        if nb_personnes <= 2: return 1
+        elif nb_personnes <= 4: return 2
+        elif nb_personnes >= 5: return 3  # 5-6 pers = 3, et 7+ pers = 3
+        return 0
     
     @staticmethod
     def clean_column_names(df: pd.DataFrame) -> pd.DataFrame:
@@ -555,12 +568,6 @@ class ReportGenerator:
         
         return json.dumps(report, ensure_ascii=False, indent=2)
 
-
-import pandas as pd
-import requests
-from io import BytesIO
-import streamlit as st
-
 def load_github_mappings(url):
     """
     Télécharge le fichier Excel depuis GitHub et crée un dictionnaire 
@@ -576,7 +583,7 @@ def load_github_mappings(url):
         # numériques ne soient interprétés comme des nombres ou des floats.
         df_choices = pd.read_excel(
             BytesIO(response.content), 
-            sheet_name='choices',   # CORRECTION : minuscule (le fichier utilise 'choices' pas 'Choices')
+            sheet_name='Choix', 
             dtype=str
         )
         
@@ -620,9 +627,52 @@ def load_github_mappings(url):
     except Exception as e:
         st.error(f"❌ Une erreur inattendue est survenue : {e}")
         return None
-        
+ def load_multiple_github_mappings(selected_phases: List[str]) -> Dict:
+    """
+    Télécharge et fusionne les dictionnaires de mapping pour toutes les phases sélectionnées.
+    """
+    combined_mappings = {}
+    
+    if not selected_phases:
+        return combined_mappings
+
+    for phase in selected_phases:
+        url = MAPPINGS_URLS.get(phase)
+        if not url:
+            continue
+            
+        try:
+            response = requests.get(url, timeout=15)
+            response.raise_for_status()
+            
+            df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choix', dtype=str)
+            df_choices.columns = df_choices.columns.str.strip()
+            df_choices = df_choices.dropna(subset=['list_name', 'value'])
+            
+            for list_name in df_choices['list_name'].unique():
+                clean_list_key = str(list_name).strip()
+                subset = df_choices[df_choices['list_name'] == list_name]
+                
+                # Nouveau dictionnaire pour cette phase
+                phase_dict = dict(zip(subset['value'].str.strip(), subset['label'].str.strip()))
+                
+                # Si la catégorie existe déjà (ex: 'province'), on fusionne les dictionnaires
+                if clean_list_key in combined_mappings:
+                    combined_mappings[clean_list_key].update(phase_dict)
+                else:
+                    combined_mappings[clean_list_key] = phase_dict
+                    
+        except Exception as e:
+            st.error(f"❌ Erreur lors du chargement des mappings pour la {phase} : {e}")
+            
+    return combined_mappings       
 # URL vers votre fichier (format RAW)
-GITHUB_URL = "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx"
+# URLs vers les fichiers d'onglets 'Choix' de chaque phase (Format RAW requis)
+MAPPINGS_URLS = {
+    "Phase 1": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_1.xlsx",
+    "Phase 2": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_2.xlsx",
+    "Phase 3": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_3.xlsx" # À adapter si le nom change
+}
 mappings = load_github_mappings(GITHUB_URL)
 
 ################################################################################
@@ -638,16 +688,19 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
             'start': ['start'],
             'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
+            'consentement': ['S1Q01'],
             'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
             'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
             'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
+            #'enqueteur': ['enqueteur'],
             'village': ['village', 'Village/Avenue/Quartier', 'S0Q08'],
             'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'gr_1/S1Q2'],
             'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
             'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
             'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
-            'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
-            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
+            #'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
+            #'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
+            'norme': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
             'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
@@ -662,19 +715,8 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         }
 
     # Nettoyage des noms (enlève les préfixes gr_1/ etc.)
-    # CORRECTION : dédoublonnage pour éviter que data['col'] retourne un DataFrame
-    new_cols = []
-    seen_cols = set()
-    for c in data.columns:
-        short = c.split('/')[-1]
-        if short not in seen_cols:
-            new_cols.append(short)
-            seen_cols.add(short)
-        else:
-            new_cols.append(c)  # garde le nom original pour éviter le doublon
-    data.columns = new_cols
-    data = data.loc[:, ~data.columns.duplicated(keep='first')]
-
+    data.columns = [c.split('/')[-1] for c in data.columns]
+    
     # Application du mapping
     rename_dict = {}
     for target, sources in column_mapping.items():
@@ -691,6 +733,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
             'district': 'district',
             'centre_sante': 'cs',
             'village': 'village',
+            #'agent_name' : 'enqueteur',
             'sexe': 'sexe',
             'activ_rev': 'activ_rev',
             'raison': 'raison',          # Choix multiples possibles
@@ -704,13 +747,13 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
 
         for col, list_name in config.items():
             if col in data.columns:
-                # Nettoyage de base (String, suppression du .0, suppression des espaces)
+                # Nettoyage de base — CORRECTION : utiliser str.replace() et pas .replace()
                 data[col] = (
                     data[col]
                     .astype(str)
                     .str.replace(r'\.0$', '', regex=True)
                     .str.strip()
-                    .str.replace(r'^nan$', '', regex=True)  # CORRECTION : str.replace() au lieu de .replace()
+                    .str.replace(r'^nan$', '', regex=True)  # ← CORRIGÉ : str.replace() au lieu de .replace()
                 )
                 
                 if list_name in mappings:
@@ -718,7 +761,6 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                         # --- LOGIQUE POUR CHOIX MULTIPLES ---
                         def decode_multi(val, mapping_dict):
                             if not val or val == '': return val
-                            # On sépare par l'espace (standard KoBo), on traduit, on rejoint par virgule
                             codes = str(val).split()
                             labels = [mapping_dict.get(c, c) for c in codes]
                             return ", ".join(labels)
@@ -733,17 +775,18 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
         coords = data['latitude']
         data['latitude'] = coords.apply(lambda x: x[0] if isinstance(x, list) else None)
         data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) else None)
-
+        
+    
     # Normalisation Oui/Non
-    # CORRECTION : aplatir les cellules qui sont des listes (groupes répétés KoBo)
-    yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information', 'menage_chef', 'respondant_col', 'id_scan', 'sensibilise']
-    for col in yes_no_cols:
+    # Dans process_milda_dataframe
+    cols_to_fix = ['menage_servi', 'menage_marque', 'information', 'menage_chef', 'respondant_col', 'sensibilise', 'consentement']
+    for col in cols_to_fix:
         if col in data.columns:
-            data[col] = data[col].apply(
-                lambda x: x[0] if isinstance(x, (list, np.ndarray)) and len(x) > 0 else x
-            )
-            data[col] = data[col].apply(DataProcessor.normalize_yes_no)
+            # On s'assure de ne traiter que des valeurs simples
+            data[col] = data[col].astype(str).apply(DataProcessor.normalize_yes_no)
 
+    data['norme'] = data['norme'].apply(DataProcessor.normalize_norme)
+    data = data[data['consentement'] == 'Oui']
     # Conversions numériques et indicateurs
     for col in ['nb_personnes', 'nb_milda_recues']:
         if col in data.columns:
@@ -753,11 +796,22 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     data['ecart_distribution'] = data['nb_milda_recues'] - data['nb_milda_attendues']
     
     # Indicateurs binaires pour le Dashboard
+    # Remplacez les lignes 207-210 par :
+    
+    # APRÈS (corrigé)
+    # Forcez la création des colonnes indicateurs même si les données sont brutes
+    # Note : on compare avec 'yes' car c'est la valeur interne de votre nouveau formulaire
+    #data['indic_servi'] = (data.get('menage_servi', pd.Series()).astype(str).str.lower() == 'yes').astype(int)
+    #data['indic_marque'] = (data.get('menage_marque', pd.Series()).astype(str).str.lower() == 'yes').astype(int)
+    
+    # Calcul du "Correctement servi" (Servi + Norme respectée)
+    #norme_ok = (data.get('norme', pd.Series()).astype(str).str.lower() == 'yes')
+    #data['indic_correct'] = ((data['indic_servi'] == 1) & norme_ok).astype(int)
     data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
-    norme_ok = (data['norme'] == 'Oui') if 'norme' in data.columns else pd.Series(False, index=data.index)
-    data['indic_correct'] = ((data['menage_servi'] == 'Oui') & norme_ok).astype(int)
-    data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int) if 'menage_marque' in data.columns else 0
-    data['indic_info'] = (data['information'] == 'Oui').astype(int) if 'information' in data.columns else 0
+    #data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
+    data['indic_correct'] = ((data['norme'] == 'Oui')).astype(int)
+    data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
+    data['indic_info'] = (data['information'] == 'Oui').astype(int)
 
     if 'date_enquete' in data.columns:
         data['date_enquete'] = pd.to_datetime(data['date_enquete'], errors='coerce')
@@ -796,10 +850,10 @@ def load_data_from_kobo(server_url: str, asset_uid: str, token: str) -> Tuple[pd
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.DataFrame, Dict]:
-    """Charge et traite les données avec mise en cache"""
+    """Charge et traite les données Excel en alignant les indicateurs sur le format KoBo"""
     
     try:
-        # Lecture du fichier
+        # 1. Lecture du fichier
         if sheet_name:
             try:
                 data = pd.read_excel(uploaded_file, sheet_name=sheet_name)
@@ -808,91 +862,94 @@ def load_and_process_data(uploaded_file, sheet_name: str = None) -> Tuple[pd.Dat
         else:
             data = pd.read_excel(uploaded_file, sheet_name=0)
         
-        # Mapping des colonnes (version robuste)
+        # 2. Mapping des colonnes (Identique à KoBo pour l'unification)
         column_mapping = {
             'province': ['province', 'Province', 'S0Q02'],
             'district': ['district', 'district sanitaire', 'District sanitaire de :', 'S0Q06'],
-            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q07'],
+            'centre_sante': ['centre_sante', 'centre de santé', 'Centre de santé', 'S0Q07', 'cs'],
             'date_enquete': ['date_enquete', 'date_enquête', 'Date enquête', 'Date', 'Date de l’enquête', 'S0Q01'],
-            'start': ['start'],
-            'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
-            'activ_rev': ['S1Q05', 'Profession du chef de ménage'],
-            'heure_interview': ['heure_interview', 'Heure', 'time', 'heure', 'end'], 
-            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05'],
+            'agent_name': ['agent_name', "Nom de l'enquêteur", 'Enquêteur', 'Username', 'S0Q05', 'enqueteur'],
             'village': ['village', 'Village/Avenue/Quartier', 'S0Q08'],
-            'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'gr_1/S1Q2'],
-            'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'gr_1/S1Q17', 'S1Q17' ],
-            'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'gr_1/S1Q19', 'S1Q19'],
-            'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'gr_1/S1Q20', 'S1Q20'],
-            'verif_cle': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
-            'norme': ['norme', 'gr_1/S1Q21', 'S1Q21'],
-            'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
-            'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
-            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
-            'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
-            'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
-            'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
-            'raison' : ['Sélectionner la raison', 'S1Q25'],
-            'raison_scan' : ["${agent_name},Pourquoi vous n'avez pas pu scanner nombre codes QR corresondant aux MILDA reçu dans le ménage?", 'rsn'],
-            'source': ['Où avez-vous vu ou entendu ces informations ?', 'source'],
-            'conseil' : ['sensibilisation', "Au cours du mois dernier, quelles instructions d'utilisation et d'entretien des moustiquaires avez-vous vues ou entendues?"],
-            'information' : ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information']
+            'sexe': ['S1Q14', 'Sexe du répondant', 'Sexe', 'sexe'],
+            'activ_rev': ['S1Q05', 'Profession du chef de ménage', 'activ_rev'],
+            'menage_chef' : ['S1Q02', 'Etes-vous le Chef de ce ménage ?', 'menage_chef'],
+            'menage_servi': ['Est-ce que le ménage a-t-il été servi en MILDA lors de la campagne de distribution de masse ?', 'S1Q17', 'menage_servi'],
+            'norme': ['norme', 'S1Q21', 'respect_norme', "${agent_name},Ce ménage a-t-il été servi conformément à la norme de la CDM 2026?"],
+            'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'S1Q22'],
+            'information': ['Étiez-vous informé qu’il y aurait une campagne de distribution de moustiquaires et que des agents visiteraient les ménages ?', 'information', 'S1Q23'],
+            'nb_personnes': ['nb_personnes', 'Nombre des personnes qui habitent dans le ménage', 'S1Q19'],
+            'nb_milda_recues': ['nb_milda_recues', 'Combien de MILDA avez-vous reçues ?', 'S1Q20'],
+            'latitude': ['_LES COORDONNEES GEOGRAPHIQUES_latitude', 'latitude','lat'],
+            'longitude': ['_LES COORDONNEES GEOGRAPHIQUES_longitude', 'longitude', 'long'],
+            'end_dt': ['end', 'Heure de fin', 'end_dt']
         }
         
-        # Appliquer le mapping
+        # Application du renommage
         rename_dict = {}
         for target, sources in column_mapping.items():
             for source in sources:
                 if source in data.columns:
                     rename_dict[source] = target
                     break
-        
         data = data.rename(columns=rename_dict)
-        
-        # Normalisation des colonnes Oui/Non
-        yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information']
+
+    
+        # 3. Nettoyage et Normalisation (Crucial pour le rapport)
+        # On s'assure que 'Oui'/'Non' sont uniformes
+        yes_no_cols = ['menage_servi', 'norme', 'menage_marque', 'information', 'menage_chef']
         for col in yes_no_cols:
             if col in data.columns:
-                data[col] = data[col].apply(DataProcessor.normalize_yes_no)
+                data[col] = data[col].astype(str).apply(DataProcessor.normalize_yes_no)
         
-        # Conversion des valeurs numériques
-        if 'nb_personnes' in data.columns:
-            data['nb_personnes'] = pd.to_numeric(data['nb_personnes'], errors='coerce')
-        if 'nb_milda_recues' in data.columns:
-            data['nb_milda_recues'] = pd.to_numeric(data['nb_milda_recues'], errors='coerce')
+        # 4. Conversions numériques
+        for col in ['nb_personnes', 'nb_milda_recues']:
+            if col in data.columns:
+                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+
+        # APRÈS avoir appliqué le rename_dict, ajoutez cette sécurité :
+        if 'end_dt' not in data.columns:
+            if 'date_enquete' in data.columns:
+                data['end_dt'] = data['date_enquete'] # Repli sur la date d'enquête
+            else:
+                data['end_dt'] = pd.Timestamp.now()
+        # 5. Calcul des indicateurs de performance (ALIGNÉS SUR LE RAPPORT WORD)
+        # Ces colonnes 'indic_...' sont celles utilisées par generate_automatic_report
+        data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
         
-        # Calcul des indicateurs
+        # Correctement servi = Servi ET Norme respectée
+        data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data.get('norme') == 'Oui')).astype(int)
+        
+        # Marqué = Ménage marqué 'Oui'
+        data['indic_marque'] = (data['menage_marque'] == 'Oui').astype(int)
+        
+        # Information = Informé 'Oui'
+        data['indic_info'] = (data.get('information') == 'Oui').astype(int)
+
+        # 6. Calcul des besoins (Règle CDM 2026)
         if 'nb_personnes' in data.columns:
             data['nb_milda_attendues'] = data['nb_personnes'].apply(DataProcessor.calculate_expected_milda)
+            if 'nb_milda_recues' in data.columns:
+                data['ecart_distribution'] = data['nb_milda_recues'] - data['nb_milda_attendues']
         
-        if 'nb_milda_attendues' in data.columns and 'nb_milda_recues' in data.columns:
-            data['ecart_distribution'] = data['nb_milda_recues'] - data['nb_milda_attendues']
-        
-        # Indicateurs binaires
-        data['indic_servi'] = (data['menage_servi'] == 'Oui').astype(int)
-        data['indic_correct'] = ((data['menage_servi'] == 'Oui') & (data['norme'] == 'Oui')).astype(int)
-        data['indic_marque'] = ((data['menage_servi'] == 'Oui') & (data['menage_marque'] == 'Oui')).astype(int)
-        data['indic_info'] = (data['information'] == 'Oui').astype(int)
-        
-        # Conversion des dates
+        # 7. Traitement des dates pour le titre du rapport
         if 'date_enquete' in data.columns:
             data['date_enquete'] = pd.to_datetime(data['date_enquete'], errors='coerce')
         
-        # Statistiques de base
+        # 8. Statistiques pour l'interface Streamlit
         stats = {
             'total_rows': len(data),
             'total_provinces': data['province'].nunique() if 'province' in data.columns else 0,
             'total_districts': data['district'].nunique() if 'district' in data.columns else 0,
             'date_range': (
-                data['date_enquete'].min().strftime('%Y-%m-%d') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A',
-                data['date_enquete'].max().strftime('%Y-%m-%d') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A'
+                data['date_enquete'].min().strftime('%d/%m/%Y') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A',
+                data['date_enquete'].max().strftime('%d/%m/%Y') if 'date_enquete' in data.columns and data['date_enquete'].notna().any() else 'N/A'
             )
         }
         
         return data, stats
         
     except Exception as e:
-        st.error(f"Erreur lors du chargement des données : {str(e)}")
+        st.error(f"Erreur lors du traitement Excel : {str(e)}")
         return pd.DataFrame(), {}
 
 
@@ -1429,64 +1486,300 @@ def page_statistics(data: pd.DataFrame):
             use_container_width=True
         )
 
+from staticmap import StaticMap, CircleMarker
+from PIL import Image
+
+def get_village_map_screenshot(df_village, village_name, lat_col, lon_col):
+    """
+    Génère une image statique du village SANS Selenium.
+    Ultra-léger pour Streamlit Cloud.
+    """
+    #st.text(f"📸 Génération statique : {village_name}...")
+    
+    # Nom du fichier image temporaire
+    safe_name = "".join([c for c in village_name if c.isalnum()]).rstrip()
+    temp_png = f"static_map_{safe_name}.png"
+
+    try:
+        # 1. Création de la carte statique
+        # Comprendre le Zoom : staticmap utilise un zoom OSM (18 = très proche)
+        # Pour le satellite gratuit, on utilise 'osm-satellite' si disponible ou OSM standard
+        # Note: L'imagerie Airbus précise nécessite une API payante sans Selenium.
+        # On utilise ici OSM standard pour la stabilité absolue.
+        
+        # Pour une vue satellite gratuite (Esri), décommentez la ligne url_template
+        # Mais attention, OSM standard est plus rapide et stable sur le Cloud.
+        # url_template = 'http://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        
+        m = StaticMap(1000, 800) # Taille de l'image finale en pixels
+
+        # 2. Ajout de tous les points du village sur la carte
+        for _, row in df_village.iterrows():
+            if pd.notna(row[lat_col]) and pd.notna(row[lon_col]):
+                
+                is_servi = row.get('indic_servi') == 1
+                color = '#00FF00' if is_servi else '#FF0000' # Vert/Rouge
+                
+                # Ajout du point (Marker) : Longitude, Latitude
+                marker = CircleMarker((row[lon_col], row[lat_col]), color, 12)
+                m.add_marker(marker)
+
+        # 3. Calcul automatique du zoom idéal pour voir tous les points
+        # staticmap le gère si on ne spécifie pas de zoom dans render()
+        image = m.render() 
+        
+        # 4. Sauvegarde de l'image
+        image.save(temp_png)
+        
+        if os.path.exists(temp_png):
+            return temp_png
+        else:
+            return None
+
+    except Exception as e:
+        st.error(f"Erreur carte statique sur {village_name}: {str(e)}")
+        # En cas d'erreur de tuiles, on crée une image blanche avec un message
+        img = Image.new('RGB', (1000, 800), color = 'white')
+        img.save(temp_png)
+        return temp_png
+
+def generate_visual_report(data, doc):
+    """Génère le rapport Word avec images statiques (Méthode Survie)"""
+    
+    # Identification GPS
+    lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
+    lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
+    
+    if not lat_col or not lon_col:
+        st.error("Coordonnées GPS manquantes.")
+        return doc
+
+    # Entête
+    doc.add_heading('Rapport de Suivi Géospatial - CDM 2026', level=0)
+    doc.add_paragraph(f"Généré le : {datetime.now().strftime('%d/%m/%Y')}").italic = True
+    doc.add_paragraph("Cartographie : OpenStreetMap Statique | Échelle automatique").italic = True
+    
+    districts = [d for d in data['district'].unique() if pd.notna(d)]
+    
+    # Interface
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    for idx, dist in enumerate(districts):
+        status_text.info(f"📍 District : **{dist}** ({idx + 1}/{len(districts)})")
+        progress_bar.progress((idx + 1) / len(districts))
+
+        df_dist = data[data['district'] == dist]
+        villages = [v for v in df_dist['village'].unique() if pd.notna(v)]
+        
+        # Sélection aléatoire (2 max)
+        selected_villages = random.sample(list(villages), min(2, len(villages)))
+        
+        doc.add_heading(f'District Sanitaire : {dist}', level=1)
+
+        for vil in selected_villages:
+            df_vil = df_dist[df_dist['village'] == vil].dropna(subset=[lat_col, lon_col])
+            
+            if not df_vil.empty:
+                doc.add_heading(f'Village : {vil}', level=2)
+                
+                # Génération statique (Très rapide, pas de crash RAM)
+                img_path = get_village_map_screenshot(df_vil, vil, lat_col, lon_col)
+                
+                if img_path and os.path.exists(img_path):
+                    # Insertion Word
+                    doc.add_picture(img_path, width=Inches(5.8))
+                    
+                    # Légende
+                    tot = len(df_vil)
+                    serv = len(df_vil[df_vil['indic_servi'] == 1])
+                    doc.add_paragraph(f"Carte de {vil}. Ménages : {tot} (Servis [Vert] : {serv})").italic = True
+                    
+                    # Nettoyage
+                    os.remove(img_path)
+            
+            doc.add_page_break()
+
+    progress_bar.empty()
+    status_text.success("✅ Rapport généré !")
+    return doc
 
 def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
-    """Page d'export et de génération de rapports"""
+    """Page d'export et de génération de rapports - Version Statique Stable"""
     
     st.markdown("## 📥 Export et Rapports")
+    
+    # --- 1. DÉTECTION GÉNÉRALE DES COLONNES GPS (CRITIQUE) ---
+    # On définit ces variables au début pour qu'elles soient visibles par toutes les colonnes
+    lat_col = next((c for c in data.columns if 'lat' in c.lower()), None)
+    lon_col = next((c for c in data.columns if 'lon' in c.lower() or 'lng' in c.lower()), None)
     
     st.markdown("### 📊 Options d'export")
     
     # Calcul des métriques pour le rapport
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
+    # --- COLONNE 1 : EXCEL ---
     with col1:
         st.markdown("#### Excel")
-        st.markdown("Export complet avec toutes les analyses")
-        
-        if st.button("📊 Générer Excel", use_container_width=True):
+        if st.button("📊 Générer Excel", key="btn_excel", use_container_width=True):
             with st.spinner("Génération du rapport Excel..."):
                 excel_file = ReportGenerator.generate_excel_report(data, tables, metrics)
                 st.download_button(
                     label="⬇️ Télécharger Excel",
                     data=excel_file,
-                    file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
     
+    # --- COLONNE 2 : JSON ---
     with col2:
         st.markdown("#### JSON")
-        st.markdown("Format structuré pour intégrations")
-        
-        if st.button("📋 Générer JSON", use_container_width=True):
+        if st.button("📋 Générer JSON", key="btn_json", use_container_width=True):
             json_report = ReportGenerator.generate_json_report(data, metrics)
             st.download_button(
                 label="⬇️ Télécharger JSON",
                 data=json_report,
-                file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                file_name=f"rapport_milda_{datetime.now().strftime('%Y%m%d')}.json",
                 mime="application/json",
                 use_container_width=True
             )
     
+    # --- COLONNE 3 : CSV ---
     with col3:
         st.markdown("#### CSV")
-        st.markdown("Données brutes pour traitement externe")
-        
         csv_data = data.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="⬇️ Télécharger CSV",
             data=csv_data,
-            file_name=f"donnees_milda_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            file_name=f"donnees_milda_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
             use_container_width=True
         )
+
+    # --- COLONNE 4 : GOOGLE EARTH (ZIP/KML) ---
+    with col4:
+        st.markdown("#### Google Earth")
+        if st.button("🌍 Pack ZIP (KML)", key="btn_kml", use_container_width=True):
+            if lat_col and lon_col:
+                with st.spinner("Génération des fichiers KML..."):
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                        df_geo = data.dropna(subset=[lat_col, lon_col])
+                        grouped = df_geo.groupby(['province', 'district'])
+                        
+                        for (prov_name, dist_name), group in grouped:
+                            kml = simplekml.Kml()
+                            for _, row in group.iterrows():
+                                pnt = kml.newpoint(name="") # Vide selon votre souhait
+                                pnt.coords = [(row[lon_col], row[lat_col])]
+                                is_servi = row.get('indic_servi') == 1
+                                pnt.style.iconstyle.color = 'ff00ff00' if is_servi else 'ff0000ff'
+                                pnt.style.iconstyle.icon.href = 'http://maps.google.com/mapfiles/kml/paddle/wht-blank.png'
+                                pnt.description = (
+                                f"<b>ID Ménage:</b> {row.get('id_menage', 'N/A')}<br>"
+                                f"<b>Province:</b> {row.get('province', 'N/A')}<br>"
+                                f"<b>District:</b> {row.get('district', 'N/A')}<br>"
+                                f"<b>Centre de Santé:</b> {row.get('centre_sante', 'N/A')}<br>"
+                                f"<b>Village:</b> {row.get('village', 'N/A')}<br>"
+                                f"<b>Agent Enquêteur:</b> {row.get('agent_name', 'N/A')}"
+                            )
+                            
+                            clean_prov = str(prov_name).replace("/", "-")
+                            clean_dist = str(dist_name).replace("/", "-")
+                            zip_file.writestr(f"{clean_prov}/{clean_dist}.kml", kml.kml())
+
+                    st.download_button(
+                        label="⬇️ Télécharger ZIP",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"cartographie_{datetime.now().strftime('%Y%m%d')}.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+            else:
+                st.error("Colonnes GPS introuvables.")
+
+    # --- COLONNE 5 : RAPPORT VISUEL (WORD + STATICMAP) ---
+    with col5:
+        st.markdown("#### Visuels")
+        if st.button("🖼️ Rapport Word Villages", key="btn_word", use_container_width=True):
+            if not lat_col or not lon_col:
+                st.error("Coordonnées GPS manquantes pour les visuels.")
+            else:
+                # --- INITIALISATION ---
+                districts = [d for d in data['district'].unique() if pd.notna(d)]
+                total_dist = len(districts)
+                
+                progress_bar = st.progress(0)
+                status_text = st.empty() 
+                
+                with st.spinner("Génération des cartes statiques..."):
+                    doc = Document()
+                    doc.add_heading('Suivi Visuel par Village - CDM 2026', level=0)
+                    doc.add_paragraph("Cartographie : OpenStreetMap Statique | Villages > 1 ménage").italic = True
+                    
+                    for idx, dist in enumerate(districts):
+                        progression = (idx + 1) / total_dist
+                        progress_bar.progress(progression)
+                        status_text.info(f"📍 District {idx+1}/{total_dist} : **{dist}**")
+                        
+                        df_dist = data[data['district'] == dist]
+                        
+                        # --- FILTRAGE DES VILLAGES DE TAILLE > 1 ---
+                        # On compte le nombre de ménages par village
+                        counts = df_dist['village'].value_counts()
+                        # On ne garde que les noms de villages qui apparaissent plus d'une fois
+                        vils_eligibles = counts[counts > 10].index.tolist()
+                        # On s'assure qu'ils ne sont pas nuls
+                        vils_eligibles = [v for v in vils_eligibles if pd.notna(v)]
+                        
+                        if not vils_eligibles:
+                            continue # Passer au district suivant si aucun village n'est assez grand
+                        
+                        # Sélection aléatoire parmi les villages éligibles
+                        selected = random.sample(vils_eligibles, min(2, len(vils_eligibles)))
+                        
+                        doc.add_heading(f"District : {dist}", level=1)
+                        
+                        for vil_name in selected:
+                            df_vil = df_dist[df_dist['village'] == vil_name].dropna(subset=[lat_col, lon_col])
+                            
+                            if not df_vil.empty:
+                                doc.add_heading(f"Village : {vil_name}", level=2)
+                                try:
+                                    img_path = get_village_map_screenshot(df_vil, vil_name, lat_col, lon_col)
+                                    
+                                    if img_path and os.path.exists(img_path):
+                                        doc.add_picture(img_path, width=Inches(5.5))
+                                        
+                                        servis = len(df_vil[df_vil['indic_servi'] == 1])
+                                        doc.add_paragraph(f"Analyse de {len(df_vil)} ménages à {vil_name} (Servis : {servis}).")
+                                        
+                                        os.remove(img_path)
+                                except Exception as e:
+                                    doc.add_paragraph(f"Erreur image pour {vil_name} : {str(e)}")
+                                
+                                doc.add_page_break()
+                    
+                    doc_io = io.BytesIO()
+                    doc.save(doc_io)
+                    
+                    progress_bar.empty()
+                    status_text.success(f"✅ Rapport généré !")
+                    
+                    st.download_button(
+                        label="⬇️ Télécharger Word", 
+                        data=doc_io.getvalue(), 
+                        file_name=f"Rapport_Carto_MILDA_{datetime.now().strftime('%d_%m')}.docx", 
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True
+                    )
     
+
     st.markdown("---")
-    
-    # Prévisualisation du contenu
     st.markdown("### 👁️ Prévisualisation des données")
     
     preview_option = st.selectbox(
@@ -1509,165 +1802,176 @@ def page_export(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     summary_df.columns = ['Valeur']
     st.dataframe(summary_df, use_container_width=True)
 
+
 import io
 
 def page_agent_tracking(data: pd.DataFrame):
     st.markdown("## 🏃 Suivi du parcours des agents")
-    
-    # 1. PRÉPARATION INITIALE & FILTRES GÉOGRAPHIQUES
+
     df_track = data.copy()
-    
-    col_f1, col_f2, col_f3 = st.columns(3)
+
+    # --- Identification des colonnes ---
+    start_col = 'start' if 'start' in df_track.columns else 'S0Q01_start'
+    end_col   = 'heure_interview' if 'heure_interview' in df_track.columns else 'end'
+    date_col  = 'date_enquete' if 'date_enquete' in df_track.columns else 'S0Q01'
+
+    # ---------- HELPERS ----------
+    def parse_single_datetime(val):
+        if pd.isna(val) or str(val).strip().lower() in ['nan', 'none', 'nat', '']:
+            return pd.NaT
+        return pd.to_datetime(val, errors='coerce', dayfirst=True)
+
+    def combine_date_time(row, target_col):
+        raw_val = str(row[target_col]).strip()
+        if raw_val.lower() in ['nan', 'none', 'nat', '']:
+            return pd.NaT
+        if '-' in raw_val or '/' in raw_val:
+            return parse_single_datetime(raw_val)
+        date_part = str(row[date_col]).split(' ')[0]
+        try:
+            return pd.to_datetime(f"{date_part} {raw_val}", errors='coerce', dayfirst=True)
+        except:
+            return pd.NaT
+
+    def safe_dt_series(series):
+        """Force une Series issue de apply() en datetime64[ns] propre."""
+        return pd.to_datetime(series, errors='coerce', utc=False)
+
+    # ── 1. FILTRES ───────────────────────────────────────────────────────────
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+
     with col_f1:
         prov_list = ["Toutes"] + sorted(df_track['province'].dropna().unique().tolist())
         sel_prov = st.selectbox("📍 Province", prov_list)
         if sel_prov != "Toutes":
             df_track = df_track[df_track['province'] == sel_prov]
+
     with col_f2:
         dist_list = ["Tous"] + sorted(df_track['district'].dropna().unique().tolist())
         sel_dist = st.selectbox("🏙️ District", dist_list)
         if sel_dist != "Tous":
             df_track = df_track[df_track['district'] == sel_dist]
+
     with col_f3:
         vill_list = ["Tous"] + sorted(df_track['village'].dropna().unique().tolist())
         sel_vill = st.selectbox("🏡 Village", vill_list)
         if sel_vill != "Tous":
             df_track = df_track[df_track['village'] == sel_vill]
 
-    # 2. CALCUL DES DURÉES (Sur l'ensemble des données filtrées géographiquement)
-    df_track['date_enquete'] = pd.to_datetime(df_track['date_enquete'], errors='coerce')
-    if 'start' in df_track.columns and 'heure_interview' in df_track.columns:
-        df_track['start'] = pd.to_datetime(df_track['start'], errors='coerce')
-        df_track['end'] = pd.to_datetime(df_track['heure_interview'], errors='coerce')
-        df_track['Duree_min'] = (df_track['end'] - df_track['start']).dt.total_seconds() / 60
-    else:
-        df_track['Duree_min'] = pd.NA
+    with col_f4:
+        t_dates = df_track[date_col].apply(parse_single_datetime).dropna()
+        min_d = t_dates.min().date() if not t_dates.empty else datetime.now().date()
+        max_d = t_dates.max().date() if not t_dates.empty else datetime.now().date()
+        sel_date = st.date_input("📅 Date", value=(min_d, max_d))
 
-    # Nettoyage pour la carte
-    df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name']).copy()
-    df_map['timestamp'] = pd.to_datetime(
-        df_map['date_enquete'].dt.date.astype(str) + ' ' + df_map['heure_interview'].astype(str),
-        errors='coerce'
-    )
-    df_map['heure_texte'] = df_map['timestamp'].dt.strftime('%H:%M')
-    df_map = df_map.sort_values(['agent_name', 'timestamp'])
-
-    # 3. SÉLECTION DE L'AGENT ET CARTE
-    col_c1, col_c2 = st.columns([2, 1])
-    agents = sorted(df_map['agent_name'].unique())
-    
-    with col_c1:
-        if len(agents) > 0:
-            selected_agent = st.selectbox("👤 Sélectionner un enquêteur à suivre", agents)
-        else:
-            st.warning("⚠️ Aucun agent trouvé.")
-            return
-
-    with col_c2:
-        choix_carte = st.selectbox("🗺️ Style de la carte", ["Satellite (Détaillé)", "Clair (Rapport)", "Sombre", "Rues"])
-
-    agent_path = df_map[df_map['agent_name'] == selected_agent]
-
-    # [Code de la carte px.line_mapbox ici...]
-    # (Je passe la partie carte pour me concentrer sur vos nouveaux tableaux)
-    # 3.2 CONSTRUCTION DE LA CARTE DÉTAILLÉE
-    if not agent_path.empty:
-        # Création de la ligne de base
-        fig = px.line_mapbox(
-            agent_path,
-            lat="latitude",
-            lon="longitude",
-            zoom=15 if "Satellite" in choix_carte else 12,
-            height=600
-        )
-        
-        # AJOUT DES POINTS AVEC L'HEURE (Libellé noir)
-        fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'],
-            lon=agent_path['longitude'],
-            mode='markers+text',
-            marker=go.scattermapbox.Marker(size=12, color='red'), # Point rouge
-            text=agent_path['heure_texte'],                      # L'heure s'affiche ici
-            textposition="top right",
-            textfont=dict(size=13, color="black"),               # Texte en noir
-            name="Ménage visité"
-        ))
-
-        # AJOUT DES PETITS POINTS DE DIRECTION (Points noirs)
-        fig.add_trace(go.Scattermapbox(
-            lat=agent_path['latitude'],
-            lon=agent_path['longitude'],
-            mode='markers',
-            marker=go.scattermapbox.Marker(size=6, color='black'),
-            hoverinfo='skip',
-            showlegend=False
-        ))
-
-        # APPLICATION DU STYLE DE CARTE
-        if choix_carte == "Satellite (Détaillé)":
-            fig.update_layout(
-                mapbox_style="white-bg",
-                mapbox_layers=[{
-                    "sourcetype": "raster",
-                    "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]
-                }]
-            )
-        else:
-            styles = {
-                "Clair (Rapport)": "carto-positron",
-                "Sombre": "carto-darkmatter",
-                "Rues": "open-street-map"
-            }
-            fig.update_layout(mapbox_style=styles.get(choix_carte, "open-street-map"))
-
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, showlegend=True)
-        
-        # Affichage final
-        st.plotly_chart(fig, use_container_width=True)
-    # 4. STATISTIQUES DESCRIPTIVES SUR LA DURÉE (Pour l'agent sélectionné)
-    st.markdown("### 📊 Statistiques de durée d'interview")
-    
-    durées = agent_path['Duree_min'].dropna().astype(float)
-    if not durées.empty:
-        stats_df = pd.DataFrame({
-            'Indicateur': ['Nombre total d\'enquêtes', 'Durée Moyenne', 'Durée Minimum', 'Durée Maximum', 'Médiane'],
-            'Valeur': [
-                f"{len(durées)}",
-                f"{durées.mean():.1f} min",
-                f"{durées.min():.1f} min",
-                f"{durées.max():.1f} min",
-                f"{durées.median():.1f} min"
+        if isinstance(sel_date, tuple) and len(sel_date) == 2:
+            df_track['temp_day'] = df_track[date_col].apply(parse_single_datetime).dt.date
+            df_track = df_track[
+                (df_track['temp_day'] >= sel_date[0]) &
+                (df_track['temp_day'] <= sel_date[1])
             ]
-        })
-        st.table(stats_df)
-    else:
-        st.info("Information de durée non disponible.")
 
-    # 5. RAPPORT JOURNALIER GLOBAL & TÉLÉCHARGEMENT
+    if df_track.empty:
+        st.warning("Aucune donnée pour cette sélection.")
+        return
+
+    # ── 2. CONVERSION DATETIME (sécurisée) ───────────────────────────────────
+    df_track['start_dt'] = safe_dt_series(
+        df_track.apply(lambda r: combine_date_time(r, start_col), axis=1)
+    )
+    df_track['end_dt'] = safe_dt_series(
+        df_track.apply(lambda r: combine_date_time(r, end_col), axis=1)
+    )
+
+    # ── 3. DURÉES ─────────────────────────────────────────────────────────────
+    diff_td = pd.to_timedelta(df_track['end_dt'] - df_track['start_dt'], errors='coerce')
+    df_track['Duree_min'] = diff_td.dt.total_seconds() / 60
+    df_track.loc[df_track['Duree_min'] < 0, 'Duree_min'] = np.nan
+
+    # ── 4. CARTE ──────────────────────────────────────────────────────────────
+    df_map = df_track.dropna(subset=['latitude', 'longitude', 'agent_name', 'end_dt']).copy()
+
+    if df_map.empty:
+        st.warning("Aucune donnée GPS exploitable pour cette sélection.")
+    else:
+        # Garantie finale : end_dt est bien datetime avant .dt
+        df_map['end_dt'] = safe_dt_series(df_map['end_dt'])
+        df_map = df_map.sort_values(['agent_name', 'end_dt'])
+        df_map['heure_texte'] = df_map['end_dt'].dt.strftime('%H:%M').fillna('--:--')
+
+        agents = sorted(df_map['agent_name'].unique())
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            sel_agent = st.selectbox("👤 Enquêteur", agents)
+        with c2:
+            style = st.selectbox("🗺️ Fond", ["Satellite", "Rues", "Clair"])
+
+        path = df_map[df_map['agent_name'] == sel_agent]
+
+        if path.empty:
+            st.info("Aucune donnée GPS pour cet enquêteur.")
+        else:
+            import plotly.express as px
+            import plotly.graph_objects as go
+
+            fig = px.line_mapbox(path, lat="latitude", lon="longitude", zoom=14, height=600)
+            fig.add_trace(go.Scattermapbox(
+                lat=path['latitude'],
+                lon=path['longitude'],
+                mode='markers+text',
+                marker=dict(size=12, color='red'),
+                text=path['heure_texte'],
+                textposition="top right"
+            ))
+
+            mapbox_styles = {
+                "Satellite": None,   # géré manuellement ci-dessous
+                "Rues":  "open-street-map",
+                "Clair": "carto-positron",
+            }
+            if style == "Satellite":
+                fig.update_layout(
+                    mapbox_style="white-bg",
+                    mapbox_layers=[{
+                        "sourcetype": "raster",
+                        "source": [
+                            "https://server.arcgisonline.com/ArcGIS/rest/services"
+                            "/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        ]
+                    }]
+                )
+            else:
+                fig.update_layout(mapbox_style=mapbox_styles[style])
+
+            fig.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ── 5. RAPPORT JOURNALIER ─────────────────────────────────────────────────
     st.divider()
-    st.markdown("### 📋 Rapport d'activité journalier (Tous les agents)")
+    st.markdown("### 📋 Rapport journalier")
+
+    def safe_strftime(val, fmt='%H:%M'):
+        """Accepte un scalaire Timestamp ou NaT — jamais une Series."""
+        try:
+            if pd.isnull(val):
+                return "N/A"
+            return pd.Timestamp(val).strftime(fmt)
+        except:
+            return "N/A"
     
-    # On groupe par agent pour avoir un résumé global
-    rapport_global = df_track.groupby('agent_name').agg(
-        Enquêtes=('agent_name', 'count'),
-        Duree_Moyenne=('Duree_min', lambda x: round(x.mean(), 1)),
-        Heure_Debut=('start', lambda x: x.min().strftime('%H:%M')),
-        Heure_Fin=('end', lambda x: x.max().strftime('%H:%M'))
+    rep = df_track.groupby('agent_name').agg(
+        Enquêtes    = ('agent_name', 'count'),
+        Moyenne_Min = ('Duree_min',  lambda x: round(x.mean(), 1) if not x.dropna().empty else 0),
+        Début       = ('start_dt',   lambda x: safe_strftime(x.min())),
+        Fin         = ('end_dt',     lambda x: safe_strftime(x.max())),
     ).reset_index()
 
-    st.dataframe(rapport_global, use_container_width=True)
-
-    # Bouton de téléchargement Excel
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        rapport_global.to_excel(writer, index=False, sheet_name='Rapport_Journalier')
-    
-    st.download_button(
-        label="📥 Télécharger le rapport journalier (Excel)",
-        data=output.getvalue(),
-        file_name=f"Rapport_journalier_MILDA_{sel_prov}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    st.dataframe(
+        rep.sort_values('Enquêtes', ascending=False),
+        use_container_width=True,
+        hide_index=True
     )
+
 ################################################################################
 # 2. FONCTION page_data_quality() AMÉLIORÉE
 ################################################################################
@@ -1681,68 +1985,114 @@ def page_data_quality(data: pd.DataFrame):
     
     df_qc = data.copy()
 
-    # Conversion forcée pour éviter AttributeError
-    df_qc['date_enquete'] = pd.to_datetime(df_qc['date_enquete'], errors='coerce')
-    if 'heure_interview' in df_qc.columns:
-        df_qc['timestamp'] = pd.to_datetime(
-            df_qc['date_enquete'].dt.date.astype(str) + ' ' + df_qc['heure_interview'].astype(str),
-            errors='coerce'
-        )
-    else:
-        df_qc['timestamp'] = df_qc['date_enquete']
+    # --- 1. FONCTIONS DE CONVERSION ROBUSTES ---
+    def get_safe_timestamp(row):
+        """Combine date et heure de manière isolée pour éviter Mixed Inputs"""
+        try:
+            d_col = 'date_enquete' if 'date_enquete' in row else 'S0Q01'
+            h_col = 'heure_interview' if 'heure_interview' in row else 'end'
+            
+            d_val = str(row[d_col]).split(' ')[0] if pd.notnull(row[d_col]) else ""
+            h_val = str(row[h_col]).strip() if pd.notnull(row[h_col]) else ""
+            
+            if not d_val or h_val.lower() in ['nan', 'none', '']:
+                return pd.NaT
+            
+            # Si l'heure contient déjà la date, on la parse directement
+            if '-' in h_val or '/' in h_val:
+                return pd.to_datetime(h_val, errors='coerce', dayfirst=True)
+                
+            return pd.to_datetime(f"{d_val} {h_val}", errors='coerce', dayfirst=True)
+        except:
+            return pd.NaT
 
-    def calculate_agent_quality(agent_df):
-        total = len(agent_df)
-        if total == 0: return None
+    # --- 2. TRAITEMENT DES DONNÉES ---
+    with st.spinner("Analyse de la qualité en cours..."):
+        # Création du timestamp sécurisé
+        df_qc['timestamp'] = df_qc.apply(get_safe_timestamp, axis=1)
         
-        # Complétude
-        comp_gps = (agent_df['latitude'].notna().sum()) / total * 100
-        comp_data = agent_df.notna().mean(axis=1).mean() * 100
-        
-        # Doublons et Vitesse
-        doublons = 0
-        vitesse = 0
-        valid_ts = agent_df.dropna(subset=['timestamp'])
-        if len(valid_ts) > 1:
-            doublons = (valid_ts['timestamp'].duplicated().sum() / total) * 100
-            duree = (valid_ts['timestamp'].max() - valid_ts['timestamp'].min()).total_seconds() / 3600
-            if duree > 0: vitesse = total / duree
+        def calculate_agent_quality(agent_df):
+            total = len(agent_df)
+            if total == 0: return None
+            
+            # Complétude GPS (Latitude présente)
+            comp_gps = (agent_df['latitude'].notna().sum()) / total * 100
+            
+            # Complétude des données (moyenne des cellules non vides)
+            comp_data = agent_df.notna().mean(axis=1).mean() * 100
+            
+            # Doublons temporels et Vitesse
+            doublons_pct = 0
+            vitesse_h = 0
+            valid_ts = agent_df.dropna(subset=['timestamp'])
+            
+            if len(valid_ts) > 1:
+                # Calcul des doublons sur le timestamp
+                doublons_count = valid_ts['timestamp'].duplicated().sum()
+                doublons_pct = (doublons_count / total) * 100
+                
+                # Calcul de la vitesse (enquêtes par heure)
+                diff_time = (valid_ts['timestamp'].max() - valid_ts['timestamp'].min()).total_seconds() / 3600
+                if diff_time > 0.1: # Éviter division par presque zéro
+                    vitesse_h = total / diff_time
 
-        # Score calculé (Pondération)
-        score = (comp_data * 0.5) + (comp_gps * 0.3) + ((100 - doublons) * 0.2)
-        
-        return {
-            'agent': agent_df['agent_name'].iloc[0],
-            'nb_enquetes': total,
-            'completeness_data': round(comp_data, 1),
-            'completeness_coords': round(comp_gps, 1),
-            'vitesse_travail': round(vitesse, 2),
-            'score_qualite': round(score, 1)
-        }
+            # Score final pondéré
+            # 50% Complétude, 30% GPS, 20% Absence de doublons
+            score = (comp_data * 0.5) + (comp_gps * 0.3) + ((100 - doublons_pct) * 0.2)
+            
+            return {
+                'Agent': agent_df['agent_name'].iloc[0],
+                'Enquêtes': total,
+                'Complétude (%)': round(comp_data, 1),
+                'GPS (%)': round(comp_gps, 1),
+                'Doublons (%)': round(doublons_pct, 1),
+                'Vitesse (Enq/h)': round(vitesse_h, 2),
+                'Score Qualité': round(score, 1)
+            }
 
-    # Calcul global
-    quality_results = []
-    for agent in df_qc['agent_name'].dropna().unique():
-        metrics = calculate_agent_quality(df_qc[df_qc['agent_name'] == agent])
-        if metrics: quality_results.append(metrics)
+        # Calcul pour chaque agent
+        quality_results = []
+        unique_agents = df_qc['agent_name'].dropna().unique()
+        for agent in unique_agents:
+            res = calculate_agent_quality(df_qc[df_qc['agent_name'] == agent])
+            if res: quality_results.append(res)
+        
+        if not quality_results:
+            st.warning("Aucune donnée disponible pour calculer la qualité.")
+            return
+
+        quality_df = pd.DataFrame(quality_results).sort_values('Score Qualité', ascending=False)
+
+    # --- 3. AFFICHAGE DES RÉSULTATS ---
+    import plotly.express as px
     
-    quality_df = pd.DataFrame(quality_results).sort_values('score_qualite', ascending=False)
+    # Cartes de scores globaux
+    avg_score = quality_df['Score Qualité'].mean()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Score Moyen Global", f"{avg_score:.1f} / 100")
+    m2.metric("Meilleure Performance", f"{quality_df['Score Qualité'].max():.1f}")
+    m3.metric("Agents Analysés", len(quality_df))
 
-    # Affichage Metrics
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Score Moyen", f"{quality_df['score_qualite'].mean():.1f}/100")
-    c2.metric("Meilleur Score", f"{quality_df['score_qualite'].max():.1f}/100")
-    c3.metric("Nb Agents", len(quality_df))
+    # Graphique de classement
+    fig = px.bar(
+        quality_df, 
+        x='Agent', 
+        y='Score Qualité', 
+        color='Score Qualité',
+        color_continuous_scale='RdYlGn',
+        range_color=[0, 100],
+        title="Classement de la Qualité par Agent"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Graphique des scores
-    fig_score = px.bar(quality_df, x='agent', y='score_qualite', color='score_qualite',
-                       color_continuous_scale='RdYlGn', title="Classement Qualité des Agents")
-    st.plotly_chart(fig_score, use_container_width=True)
-
-    # Tableau détaillé
-    st.markdown("### 📋 Détails de performance")
-    st.dataframe(quality_df.style.background_gradient(subset=['score_qualite'], cmap='RdYlGn'), use_container_width=True)
-
+    # Tableau détaillé avec coloration
+    st.markdown("### 📋 Détails des indicateurs de contrôle")
+    
+    # Style pour mettre en évidence les bons et mauvais scores
+    styled_df = quality_df.style.background_gradient(subset=['Score Qualité'], cmap='RdYlGn', vmin=0, vmax=100) \
+                                .background_gradient(subset=['Doublons (%)'], cmap='Reds', vmin=0, vmax=10)
+    
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
 ################################################################################
 # 3. GÉNÉRATION AUTOMATIQUE DE RAPPORT (Format Word)
 ################################################################################
@@ -1779,7 +2129,7 @@ def add_matplotlib_chart(document, data_series, title, chart_type='bar'):
     if chart_type == 'bar':
         # Création des barres
         data_series.plot(kind='bar', ax=ax, color='#2c3e50', edgecolor='white')
-        ax.set_ylabel('Pourcentage (%)', fontweight='bold')
+        ax.set_ylabel('')
         ax.set_xlabel('')
         
         # AJOUT DES LIBELLÉS (Valeurs au-dessus des barres)
@@ -1887,7 +2237,7 @@ def add_custom_diff_chart(document, data, title):
 
     # Mise en forme
     plt.title(title, pad=20, fontweight='bold')
-    plt.ylabel('Pourcentage (%)')
+    plt.ylabel('')
     plt.xlabel('Écart (Nombre de MILDA)')
     ax.set_ylim(0, max(stats.values) * 1.2) # Espace pour les étiquettes
     plt.tight_layout()
@@ -1921,6 +2271,8 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         st.error("❌ Bibliothèque python-docx non disponible. Installez-la avec: pip install python-docx")
         return None
     data = data.copy()
+    #data_1 = data.copy()
+    #data = data[data['consentement'] == 'Oui']
     
     # Créer le document
     doc = Document()
@@ -1956,7 +2308,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             for value, count in chef_data.items():
                 freq = round(count / total * 100, 2)
                 table_data.append([value, count, freq])
-            table_data.append(['Total', total, 100.00])
+            table_data.append(['Total', count, 100.00])
             
             create_table(doc, table_data, ['Êtes-vous le Chef de ce ménage ?', 'Effectif', 'Fréquence'])
             doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
@@ -1994,7 +2346,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         return 0
 
     data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
-    data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
+    data['diff_custom'] = data['requis_custom'] - data['nb_milda_recues']
 
     # --- AJOUT DU GRAPHIQUE ---
     doc.add_paragraph("Le graphique ci-dessous présente la répartition des écarts constatés :")
@@ -2013,18 +2365,13 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     create_table(doc, table_rows, ['Nombre de Différence', 'Effectif', 'Fréquence (%)'])
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
-    # On prépare une série pour le graphique (sans la ligne Total)
-    chart_series = (data['diff_custom'].value_counts(normalize=True).sort_index() * 100)
-    add_matplotlib_chart(doc, chart_series, 'Distribution des écarts de distribution (en nombre de MILDA)', 'bar')
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-
     doc.add_page_break()
             
     def add_executive_summary(doc, data):
         doc.add_heading('RÉSUMÉ EXÉCUTIF : ALERTES DE PERFORMANCE', level=1)
         
         # 1. Calcul des indicateurs par Centre de Santé (National)
-        cs_performance = data.groupby(['province', 'centre_sante']).agg(
+        cs_performance = data.groupby(['province', 'district']).agg(
             total=('indic_servi', 'count'),
             servis=('indic_servi', 'sum'),
             marques=('indic_marque', 'sum')
@@ -2042,27 +2389,27 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         if not alerte_couverture.empty:
             p = doc.add_paragraph(f"Les {len(alerte_couverture)} centres de santé suivants présentent une couverture insuffisante. Une vérification logistique ou une supervision de proximité est recommandée.")
             
-            table_alert = [['Province', 'Centre de Santé', 'Taux Couverture']]
+            table_alert = [['Province', 'District Sanitaire', 'Taux Couverture']]
             for _, row in alerte_couverture.head(10).iterrows(): # Top 10 des plus critiques
                 table_alert.append([
                     row['province'],
-                    row['centre_sante'],
+                    row['district'],
                     f"{row['taux_couverture']:.1f}%"
                 ])
             create_table(doc, table_alert, table_alert[0]) # Utilise votre fonction create_table
         else:
-            doc.add_paragraph("Félicitations : Tous les centres de santé dépassent 80% de couverture.")
+            doc.add_paragraph("Félicitations : Tous les district dépassent 80% de couverture.")
     
         # --- SECTION : ALERTES MARQUAGE ---
         doc.add_heading('Zones à faible taux de marquage (< 80%)', level=2)
         if not alerte_marquage.empty:
             doc.add_paragraph("Le marquage des ménages est essentiel pour le suivi. Les zones suivantes sont en dessous des standards de qualité :")
             
-            table_m = [['Province', 'Centre de Santé', 'Taux Marquage']]
+            table_m = [['Province', 'District', 'Taux Marquage']]
             for _, row in alerte_marquage.head(10).iterrows():
                 table_m.append([
                     row['province'],
-                    row['centre_sante'],
+                    row['district'],
                     f"{row['taux_marquage']:.1f}%"
                 ])
             create_table(doc, table_m, table_m[0])
@@ -2073,18 +2420,18 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         doc.add_heading('PRINCIPAUX INDICATEURS PAR PROVINCE', level=1)
         doc.add_paragraph("Ce tableau compare la performance globale de chaque province pour l'ensemble des indicateurs clés de la CDM-2026.")
     
-        # 1. Agrégation des données par Province
+        # 1. Agrégation correcte des données par Province
         prov_stats = data.groupby('province').agg(
-            nb_menages=('indic_servi', 'count'),
-            servis=('indic_servi', 'sum'),
-            marques=('indic_marque', 'sum'),
-            corrects=('indic_correct', 'sum')
+            nb_menages=('indic_servi', 'count'),   # Modifié : 'count' compte les lignes
+            servis=('indic_servi', 'sum'),         # Somme des 1 pour les ménages servis
+            marques=('indic_marque', 'sum'),       # Somme des 1 pour les ménages marqués
+            corrects=('indic_correct', 'sum')      # Modifié : 'sum' pour additionner les ménages conformes
         ).reset_index()
     
-        # 2. Calcul des indicateurs de performance
+        # 2. Calcul des indicateurs de performance (sécurisé)
         prov_stats['% Couverture'] = (prov_stats['servis'] / prov_stats['nb_menages'] * 100).round(1)
-        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'] * 100).round(1)
-        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'] * 100).round(1)
+        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
+        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
     
         # Tri par performance de couverture (du meilleur au moins bon)
         prov_stats = prov_stats.sort_values('% Couverture', ascending=False)
@@ -2102,7 +2449,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         for _, row in prov_stats.iterrows():
             table_data.append([
                 str(row['province']),
-                f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage des milliers
+                f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage espace pour milliers
                 f"{row['% Couverture']}%",
                 f"{row['% Marquage']}%",
                 f"{row['% Qualité (Correct)']}%"
@@ -2119,12 +2466,12 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             f"{int(total_n):,}".replace(',', ' '),
             f"{round(100 * total_s / total_n, 1)}%" if total_n > 0 else "0%",
             f"{round(100 * total_m / total_s, 1)}%" if total_s > 0 else "0%",
-            f"{round(100 * total_c / total_s, 1)}%" if total_s > 0 else "0%"
+            f"{round(100 * total_c / total_n, 1)}%" if total_s > 0 else "0%"
         ])
     
-        # 5. Création du tableau
+        # 5. Création du tableau dans le document Word
         create_table(doc, table_data, table_headers)
-        
+          
         doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
         # --- AJOUT DU GRAPHIQUE DE COMPARAISON ---
         doc.add_heading('Comparaison visuelle de la couverture par Province (%)', level=2)
@@ -2146,49 +2493,46 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
 
     #add_executive_summary(doc, data)
     add_provincial_dashboard(doc, data)
-    
+
     # 1. Identifier toutes les provinces uniques
     if 'province' in data.columns:
-        provinces = sorted(data['province'].dropna().unique())
+        provinces = sorted(data['province'].dropna().unique()) # Notez le 's' à provinces
     else:
         st.error("La colonne 'province' est manquante.")
         provinces = []
-    
+
     for prov in provinces:
         # Filtrer les données pour la province actuelle
         df_prov = data[data['province'] == prov].copy()
         
         # Titre de la section Province
         doc.add_heading(f'Analyse : Province de {prov}', level=1)
-        doc.add_heading('Ménages servis en MILDA par Centre de Santé', level=2)
         
-        if 'centre_sante' in df_prov.columns and not df_prov.empty:
-            # --- GRAPHIQUE PAR PROVINCE ---
-            # Calcul du % de 'Oui' par CS au sein de la province
-            stats_servis = df_prov.groupby('centre_sante')['indic_servi'].mean() * 100
+        # ==========================================================
+        # NOUVELLE SECTION : ANALYSE PAR DISTRICT SANITAIRE
+        # ==========================================================
+        if 'district' in df_prov.columns and not df_prov.empty:
+            doc.add_heading(f'Indicateurs par District Sanitaire - {prov}', level=2)
             
-            if not stats_servis.empty:
-                add_matplotlib_chart(doc, stats_servis, f'Couverture MILDA - {prov} (%)', 'bar')
-                doc.add_paragraph(f'Graphique : Taux de couverture par CS dans la province de {prov}.').italic = True
-    
-            # --- TABLEAU PAR PROVINCE ---
-            doc.add_heading(f'Tableau : Synthèse des indicateurs - {prov}', level=3)
-            
-            cs_stats = df_prov.groupby('centre_sante').agg(
-                total=('centre_sante', 'count'),
+            # 1. Agrégation par District
+            dist_stats = df_prov.groupby('district').agg(
+                total=('district', 'count'),
                 servis=('indic_servi', 'sum'),
                 correct=('indic_correct', 'sum')
             ).reset_index()
             
-            # Calcul des pourcentages
-            cs_stats['pct_servis'] = round(100 * cs_stats['servis'] / cs_stats['total'], 1)
-            # Gestion du cas où servis = 0 pour éviter division par zéro
-            cs_stats['pct_correct'] = round(100 * cs_stats['correct'].div(cs_stats['servis'].replace(0, pd.NA)), 1).fillna(0)
+            # 2. Calcul des indicateurs
+            dist_stats['pct_servis'] = (100 * dist_stats['servis'] / dist_stats['total']).astype(float).round(1)
+            dist_stats['pct_correct'] = (100 * dist_stats['correct'] / dist_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
             
-            table_data = []
-            for _, row in cs_stats.iterrows():
-                table_data.append([
-                    str(row['centre_sante']),
+            # 3. Graphique de couverture par District
+            add_matplotlib_chart(doc, dist_stats.set_index('district')['pct_servis'], f'Couverture MILDA par District - {prov} (%)', 'bar')
+            
+            # 4. Tableau par District
+            table_dist_data = []
+            for _, row in dist_stats.iterrows():
+                table_dist_data.append([
+                    str(row['district']),
                     int(row['total']),
                     int(row['servis']),
                     f"{row['pct_servis']}%",
@@ -2196,98 +2540,73 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
                     f"{row['pct_correct']}%"
                 ])
             
-            # Ligne de Total pour la Province
-            t_total = cs_stats['total'].sum()
-            t_servis = cs_stats['servis'].sum()
-            t_correct = cs_stats['correct'].sum()
-            
-            table_data.append([
-                'TOTAL PROVINCE',
-                t_total,
-                t_servis,
-                f"{round(100 * t_servis / t_total, 1)}%" if t_total > 0 else "0%",
-                t_correct,
-                f"{round(100 * t_correct / t_servis, 1)}%" if t_servis > 0 else "0%"
-            ])
-            
-            # Création du tableau dans Word
-            create_table(doc, table_data, [
-                'Centre de Santé',
+            create_table(doc, table_dist_data, [
+                'District Sanitaire',
                 'Ménages dénombrés',
                 'Ménages servis',
                 '% servis',
                 'Correctement servis',
                 '% correct'
             ])
+            doc.add_paragraph(f'Source : Analyse par district pour la province de {prov}').italic = True
+            doc.add_page_break()
         
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-        
-        # Saut de page après chaque province (optionnel)
-        doc.add_page_break()
-
-        # On suppose que cette partie se trouve à l'intérieur de la boucle : for prov in provinces:
-        # df_prov est déjà filtré pour la province en cours
         
         doc.add_heading(f'Analyse du marquage des ménages - {prov}', level=2)
+
+        # --- ANALYSE DU MARQUAGE PAR DISTRICT ---
+        doc.add_heading(f'Analyse du marquage par District Sanitaire - {prov}', level=2)
         
-        if 'centre_sante' in df_prov.columns and not df_prov.empty:
-            # 1. GRAPHIQUE DE MARQUAGE (Seulement pour les ménages servis)
-            # On filtre pour ne prendre que les ménages servis dans cette province
-            df_servis_prov = df_prov[df_prov['indic_servi'] == 1]
+        if 'district' in df_prov.columns and not df_prov.empty:
+            # Filtrer uniquement les ménages servis pour le calcul du marquage
+            df_servis_dist = df_prov[df_prov['indic_servi'] == 1]
             
-            if not df_servis_prov.empty:
-                stats_marquage = df_servis_prov.groupby('centre_sante')['indic_marque'].mean() * 100
+            if not df_servis_dist.empty:
+                # 1. Calcul des statistiques par District
+                dist_marquage_stats = df_servis_dist.groupby('district').agg(
+                    servis=('indic_servi', 'count'),
+                    marques=('indic_marque', 'sum')
+                ).reset_index()
                 
-                if not stats_marquage.empty:
-                    add_matplotlib_chart(doc, stats_marquage, f'Taux de marquage des ménages servis - {prov} (%)', 'bar')
-                    doc.add_paragraph(f'Graphique : Proportion des ménages servis ayant reçu un marquage (Province : {prov}).').italic = True
-        
-            # 2. TABLEAU DÉTAILLÉ DU MARQUAGE
-            doc.add_heading(f'Tableau : Statut du marquage par CS - {prov}', level=3)
-            
-            # Note : Utilisation de 'indic_servi' == 1 pour la cohérence avec vos indicateurs numériques
-            marquage_stats = df_prov[df_prov['indic_servi'] == 1].groupby('centre_sante').agg(
-                servis=('indic_servi', 'count'),
-                marques=('indic_marque', 'sum')
-            ).reset_index()
-            
-            if not marquage_stats.empty:
-                # Calcul du pourcentage par ligne
-                marquage_stats['pct_marques'] = round(100 * marquage_stats['marques'] / marquage_stats['servis'], 1)
+                # Calcul du pourcentage sécurisé (float)
+                dist_marquage_stats['pct_marques'] = (100 * dist_marquage_stats['marques'] / dist_marquage_stats['servis']).astype(float).round(1)
                 
-                table_data_marquage = []
-                for _, row in marquage_stats.iterrows():
-                    table_data_marquage.append([
-                        str(row['centre_sante']),
+                # 2. Graphique par District
+                add_matplotlib_chart(
+                    doc, 
+                    dist_marquage_stats.set_index('district')['pct_marques'], 
+                    f'Taux de marquage par District - {prov} (%)', 
+                    'bar'
+                )
+                
+                # 3. Tableau par District
+                table_dist_marquage = []
+                for _, row in dist_marquage_stats.iterrows():
+                    table_dist_marquage.append([
+                        str(row['district']),
                         int(row['servis']),
                         int(row['marques']),
                         f"{row['pct_marques']}%"
                     ])
                 
-                # Ligne de Total Province pour le marquage
-                total_servis = marquage_stats['servis'].sum()
-                total_marques = marquage_stats['marques'].sum()
-                pct_total_marques = round(100 * total_marques / total_servis, 1) if total_servis > 0 else 0
+                # Ajouter la ligne de Total Province pour le marquage
+                t_servis = dist_marquage_stats['servis'].sum()
+                t_marques = dist_marquage_stats['marques'].sum()
+                t_pct = round(100 * t_marques / t_servis, 1) if t_servis > 0 else 0
                 
-                table_data_marquage.append([
-                    'TOTAL PROVINCE',
-                    total_servis,
-                    total_marques,
-                    f"{pct_total_marques}%"
-                ])
+                table_dist_marquage.append(['TOTAL PROVINCE', t_servis, t_marques, f"{t_pct}%"])
                 
-                # Création du tableau Word
-                create_table(doc, table_data_marquage, [
-                    'Centre de Santé',
-                    'Ménages servis',
-                    'Ménages marqués',
+                create_table(doc, table_dist_marquage, [
+                    'District Sanitaire', 
+                    'Ménages servis', 
+                    'Ménages marqués', 
                     '% marqués'
                 ])
             else:
-                doc.add_paragraph("Aucune donnée de marquage disponible (aucun ménage servi dans cette province).")
+                doc.add_paragraph("Aucun ménage servi enregistré pour l'analyse du marquage dans ces districts.")
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-        doc.add_page_break()
+        
     
     # ========== ANALYSE DE LA DISTRIBUTION ==========
     doc.add_heading('Analyse de la distribution des moustiquaires', level=1)
@@ -2324,76 +2643,143 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
-    doc.add_page_break()
+    #doc.add_page_break()
     
-    # ========== SENSIBILISATION ==========
-    doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
+    # ========== SECTION : SENSIBILISATION (INFORMATION) ==========
+    doc.add_heading('Information sur la campagne de distribution des MILDA', level=1)
     
-    if 'centre_sante' in data.columns:
-        sensi_stats = data.groupby('centre_sante').agg(
-            total=('centre_sante', 'count'),
+    # --- 1. TABLEAU DE DISTRIBUTION PAR PROVINCE (SYNTHÈSE NATIONALE) ---
+    if 'province' in data.columns:
+        doc.add_heading('Synthèse d\'Information sur la campagne de distribution des MILDA par Province', level=2)
+        
+        prov_sensi = data.groupby('province').agg(
+            total=('province', 'count'),
             informes=('indic_info', 'sum')
         ).reset_index()
         
-        sensi_stats['pct_informes'] = round(100 * sensi_stats['informes'] / sensi_stats['total'], 1)
+        # Calcul du pourcentage par province
+        prov_sensi['pct_informes'] = (100 * prov_sensi['informes'] / prov_sensi['total']).astype(float).round(1)
         
-        table_data = []
-        for _, row in sensi_stats.iterrows():
-            table_data.append([
-                row['centre_sante'],
-                row['total'],
-                row['informes'],
-                row['pct_informes']
+        table_prov_data = []
+        for _, row in prov_sensi.iterrows():
+            table_prov_data.append([
+                str(row['province']),
+                int(row['total']),
+                int(row['informes']),
+                f"{row['pct_informes']}%"
             ])
         
-        table_data.append([
-            'Total',
-            sensi_stats['total'].sum(),
-            sensi_stats['informes'].sum(),
-            round(100 * sensi_stats['informes'].sum() / sensi_stats['total'].sum(), 1)
-        ])
+        # Ligne de Total National
+        t_n_total = prov_sensi['total'].sum()
+        t_n_informes = prov_sensi['informes'].sum()
+        t_n_pct = round(100 * t_n_informes / t_n_total, 1) if t_n_total > 0 else 0
+        table_prov_data.append(['TOTAL NATIONAL', t_n_total, t_n_informes, f"{t_n_pct}%"])
         
-        create_table(doc, table_data, [
-            'CS',
-            'Ménages total',
-            'Ménages informés',
+        create_table(doc, table_prov_data, [
+            'Province', 
+            'Ménages total', 
+            'Ménages informés', 
             '% informés'
         ])
+        doc.add_paragraph('Source : Données consolidées CDM-2026').italic = True
+        #doc.add_page_break()
+    
+    # ========== SECTION : SENSIBILISATION (INFORMATION) ==========
+    #doc.add_heading('Information sur l\'utilisation correcte des MILDA', level=1)
+    
+    if 'province' in data.columns:
+        provinces = sorted(data['province'].dropna().unique())
         
-        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-    
-    doc.add_heading('Répartition des chefs de ménage', level=2)
-    # On utilise la colonne chef identifiée précédemment
-    chef_dist = data[chef_col].value_counts()
-    add_matplotlib_chart(doc, chef_dist, 'Répartition des répondants (Chef vs Autre)', 'pie')
-    
-    
-    doc.add_page_break()
-    
-    # ========== INFORMATION SUR LA CAMPAGNE ==========
-    doc.add_heading('Information de la campagne de distribution', level=1)
-    
-    # Tableau global
-    if 'sensibilise' in data.columns or any('inform' in col.lower() for col in data.columns):
-        info_col = 'sensibilise'
-        if info_col in data.columns:
-            info_counts = data[info_col].value_counts()
-            total = len(data)
+        for prov in provinces:
+            df_prov = data[data['province'] == prov].copy()
             
-            table_data = []
-            for value, count in info_counts.items():
-                freq = round(count / total * 100, 2)
-                table_data.append([value, count, freq])
-            table_data.append(['Total', total, 100.00])
+            # --- 1. Titre de la Province ---
+            doc.add_heading(f'Province : {prov}', level=2)
             
-            doc.add_heading('Tableau : Proportion des ménages informés sur la campagne', level=2)
-            create_table(doc, table_data, [
-                'Étiez-vous informé de la campagne ?',
-                'Effectif',
-                'Fréquence'
-            ])
+            # --- 2. Analyse par District Sanitaire au sein de la Province ---
+            if 'district' in df_prov.columns and not df_prov.empty:
+                doc.add_heading(f'Information sur la campagne de distribution des MILDA par District Sanitaire - {prov}', level=3)
+                
+                dist_sensi = df_prov.groupby('district').agg(
+                    total=('district', 'count'),
+                    informes=('indic_info', 'sum')
+                ).reset_index()
+                
+                dist_sensi['pct_informes'] = (100 * dist_sensi['informes'] / dist_sensi['total']).astype(float).round(1)
+                
+                table_dist_data = []
+                for _, row in dist_sensi.iterrows():
+                    table_dist_data.append([
+                        str(row['district']),
+                        int(row['total']),
+                        int(row['informes']),
+                        f"{row['pct_informes']}%"
+                    ])
+                
+                # Total pour la province (ligne de résumé)
+                t_total_p = dist_sensi['total'].sum()
+                t_informes_p = dist_sensi['informes'].sum()
+                t_pct_p = round(100 * t_informes_p / t_total_p, 1) if t_total_p > 0 else 0
+                table_dist_data.append(['TOTAL PROVINCE', t_total_p, t_informes_p, f"{t_pct_p}%"])
+                
+                create_table(doc, table_dist_data, ['District Sanitaire', 'Ménages total', 'Ménages informés', '% informés'])
+                doc.add_paragraph(f'Source : CDM-2026 - Province de {prov}').italic = True
+    
+    # ========== SECTION : SENSIBILISATION LORS DE LA CAMPAGNE ==========
+    doc.add_heading('Sensibilisation sur l\'utilisation correcte lors de la campagne', level=1)
+    
+    info_col = 'sensibilise'
+    
+    if info_col in data.columns:
+        # Nettoyage : On s'assure que la colonne est traitée comme du texte pour la comparaison
+        df_clean = data.copy()
+        df_clean[info_col] = df_clean[info_col].astype(str).str.strip().str.lower()
+    
+        # --- 1. SYNTHÈSE NATIONALE PAR PROVINCE ---
+        doc.add_heading('Tableau : Proportion des ménages sensibilisés par Province', level=2)
+        
+        # Définition des valeurs considérées comme "Vrai/Oui"
+        # On accepte 'oui', '1', '1.0', 'yes'
+        valeurs_positives = ['oui', '1', '1.0', 'yes']
+        
+        prov_sensi_global = df_clean.groupby('province').agg(
+            total=(info_col, 'count'),
+            sensibilises=(info_col, lambda x: x.isin(valeurs_positives).sum())
+        ).reset_index()
+        
+        prov_sensi_global['pct'] = (100 * prov_sensi_global['sensibilises'] / prov_sensi_global['total']).astype(float).round(1)
+        
+        table_prov = []
+        for _, row in prov_sensi_global.iterrows():
+            table_prov.append([str(row['province']), int(row['total']), int(row['sensibilises']), f"{row['pct']}%"])
+        
+        # Ligne Total National
+        t_n_total = prov_sensi_global['total'].sum()
+        t_n_sensi = prov_sensi_global['sensibilises'].sum()
+        t_n_pct = round(100 * t_n_sensi / t_n_total, 1) if t_n_total > 0 else 0
+        table_prov.append(['TOTAL NATIONAL', t_n_total, t_n_sensi, f"{t_n_pct}%"])
+        
+        create_table(doc, table_prov, ['Province', 'Ménages total', 'Ménages sensibilisés', '% sensibilisés'])
+        doc.add_page_break()
+    
+        # --- 2. DÉTAIL PAR PROVINCE > DISTRICT > CS ---
+        provinces = sorted(df_clean['province'].dropna().unique())
+        
+        for prov in provinces:
+            df_prov = df_clean[df_clean['province'] == prov].copy()
+            doc.add_heading(f'Analyse détaillée : Province de {prov}', level=2)
             
-            doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
+            # --- A. PAR DISTRICT ---
+            if 'district' in df_prov.columns:
+                doc.add_heading(f'Sensibilisation par District Sanitaire - {prov}', level=3)
+                dist_stats = df_prov.groupby('district').agg(
+                    total=(info_col, 'count'),
+                    sensi=(info_col, lambda x: x.isin(valeurs_positives).sum())
+                ).reset_index()
+                
+                dist_stats['pct'] = (100 * dist_stats['sensi'] / dist_stats['total']).astype(float).round(1)
+                table_dist = [[str(r['district']), int(r['total']), int(r['sensi']), f"{r['pct']}%"] for _, r in dist_stats.iterrows()]
+                create_table(doc, table_dist, ['District', 'Ménages total', 'Ménages sensibilisés', '%'])
 
     # Source d'information (source)
     if 'source' in data.columns:
@@ -2413,40 +2799,6 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         table_conseil = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in conseil_series.items()]
         create_table(doc, table_conseil, ['Conseil prodigué', 'Effectif', '% de ménages'])
         doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-        
-    # ========== ANALYSE DE LA DIFFÉRENCE ==========
-    doc.add_heading('Tableau 3 : Différence des moustiquaires reçues', level=2)
-    
-    # Recalcul de la différence selon la règle spécifique
-    data['requis_custom'] = data['nb_personnes'].apply(calculate_milda_requis_custom)
-    data['diff_custom'] = data['nb_milda_recues'] - data['requis_custom']
-    
-    def categorize_diff(x):
-        if x < 0: return "Moins que la norme"
-        elif x == 0: return "Norme respectée"
-        else: return "Plus que la norme"
-    
-    data['diff_label'] = data['diff_custom'].apply(categorize_diff)
-    
-    # Calcul des effectifs
-    diff_counts = data['diff_label'].value_counts()
-    total_diff = len(data)
-    
-    table_diff = []
-    for cat in ["Moins que la norme", "Norme respectée", "Plus que la norme"]:
-        count = diff_counts.get(cat, 0)
-        freq = (count / total_diff) * 100
-        table_diff.append([cat, count, f"{freq:.2f}"])
-    
-    table_diff.append(['Total', total_diff, '100.00'])
-    
-    create_table(doc, table_diff, ['Différence par rapport à la norme', 'Effectif', 'Fréquence (%)'])
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026, phase pilote').italic = True
-    
-    # Optionnel : Ajouter le graphique correspondant
-    diff_stats = (data['diff_label'].value_counts(normalize=True) * 100)
-    add_matplotlib_chart(doc, diff_stats, 'Respect de la norme de distribution (%)', 'bar')
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
 
     # ========== CALCUL DES COMPTEURS DE SCANS (À ajouter au début de la fonction) ==========
 
@@ -2477,45 +2829,19 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
     create_table(doc, table_scan, ["Moustiquaire", "Effectif", "Fréquence (%)"])
     doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
-    # ========== RAISONS NON SCAN & SENSIBILISATION ==========
-    # Raison non-scan (raison_scan)
-    if 'raison_scan' in data.columns:
-        # On ne regarde que les ménages qui ont des moustiquaires non scannées
-        df_non_scan = data[data['raison_scan'].notnull() & (data['raison_scan'] != '')]
-        if not df_non_scan.empty:
-            doc.add_heading('Tableau : Raisons du non-scannage des codes QR', level=2)
-            raison_counts = df_non_scan['raison_scan'].str.split(', ').explode().value_counts()
-            total_non_scan = len(df_non_scan)
-            table_raison = [[v, c, f"{(c/total_non_scan*100):.1f}"] for v, c in raison_counts.items()]
-            create_table(doc, table_raison, ['Motif invoqué', 'Effectif', 'Fréquence (%)'])
-            doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
     
-    # ========== INFORMATION CAMPAGNE ==========
-    doc.add_heading('1.1 Information de la campagne de distribution', level=1)
+
+    if 'raison' in data.columns:
+        doc.add_heading('Tableau : Raison de non Scannage', level=2)
+        raison_series = data['raison'].str.split(', ').explode().value_counts()
+        table_raison = [[v, c, f"{(c/total_resp*100):.1f}"] for v, c in raison_series.items()]
+        create_table(doc, table_raison, ['Raison de non scannage', 'Effectif', '% de moustiquaires'])
+        doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
         
-    # Tableau 6 : Proportion globale
-    info_counts = data['information'].value_counts()
-    total_info = len(data)
-    table_6 = [
-            ["Non", info_counts.get('Non', 0), f"{(info_counts.get('Non', 0)/total_info*100):.2f}"],
-            ["Oui", info_counts.get('Oui', 0), f"{(info_counts.get('Oui', 0)/total_info*100):.2f}"],
-            ["Total", total_info, "100"]
-        ]
-    create_table(doc, table_6, ["Étiez-vous informé...", "Effectif", "Fréquence"])
-    doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
-
-    # ========== CONCLUSION ==========
-    doc.add_page_break()
-    doc.add_heading('Conclusion', level=1)
-    
-    p = doc.add_paragraph()
-    p.add_run('Ce rapport présente une analyse complète du dénombrement-distribution de la Campagne de Distribution de Masse des MILDA 2026.\n\n')
-
     # Sauvegarder en mémoire
     output = io.BytesIO()
     doc.save(output)
     output.seek(0)
-    
     return output
 
 
@@ -2587,6 +2913,7 @@ def process_raw_kobo_data(df):
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
     # Calcul des indicateurs attendus par votre Dashboard 
+    
     if 'nb_personnes' in df.columns:
         df['nb_milda_attendues'] = df['nb_personnes'].apply(DataProcessor.calculate_expected_milda)
     
@@ -2595,6 +2922,10 @@ def process_raw_kobo_data(df):
     df['indic_correct'] = (df['norme'] == 'Oui').astype(int) if 'norme' in df.columns else 0
     df['indic_marque'] = (df['menage_marque'] == 'Oui').astype(int) if 'menage_marque' in df.columns else 0
     df['indic_info'] = (df['information'] == 'Oui').astype(int) if 'information' in df.columns else 0
+    #df['indic_servi'] = (df['menage_servi'] == 'Oui').astype(int)
+    #df['indic_correct'] = (df.get('norme') == 'Oui').astype(int)
+    #df['indic_marque'] = (df.get('menage_marque') == 'Oui').astype(int)
+    #df['indic_info'] = (df.get('information') == 'Oui').astype(int)
     
     # Calcul des écarts pour la page analyse
     if 'nb_milda_attendues' in df.columns and 'nb_milda_recues' in df.columns:
@@ -2606,13 +2937,45 @@ def process_raw_kobo_data(df):
 ################################################################################
 
 def main():
-    """Fonction principale de l'application"""
+    """Fonction principale de l'application multisite et multi-phase"""
     
     # En-tête
     render_header()
     
+    # --- CONSTANTE DES MAPPINGS GITHUB ---
+    MAPPINGS_URLS = {
+        "Phase 1": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_1.xlsx",
+        "Phase 2": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_2.xlsx",
+        "Phase 3": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_3.xlsx"
+    }
+    
+    # Initialisation des variables de session indispensables
+    if 'kobo_token' not in st.session_state:
+        st.session_state.kobo_token = None
+    if 'data' not in st.session_state:
+        st.session_state.data = None
+    if 'tables' not in st.session_state:
+        st.session_state.tables = None
+    if 'mappings' not in st.session_state:
+        st.session_state.mappings = {}
+
     # --- 1. CONFIGURATION SIDEBAR ---
     with st.sidebar:
+        st.header("⚙️ Configuration des Phases")
+        
+        # Sélecteur multiple pour choisir les phases cibles
+        phases_disponibles = list(MAPPINGS_URLS.keys())
+        selected_phases = st.multiselect(
+            "Phases à analyser/suivre :",
+            options=phases_disponibles,
+            default=["Phase 2"]  # Phase par défaut au démarrage
+        )
+        
+        if not selected_phases:
+            st.warning("⚠️ Veuillez sélectionner au moins une phase.")
+            st.stop()
+            
+        st.divider()
         st.header("🔑 Connexion KoBo")
         server_base = st.selectbox("Serveur", 
                                   ["https://kf.kobotoolbox.org", "https://kobo.humanitarianresponse.info"])
@@ -2623,17 +2986,47 @@ def main():
         
         st.divider()
         st.header("📂 Ou Import Excel")
-        uploaded_file = st.file_uploader("Choisir un fichier Excel", type=['xlsx', 'xls'])
+        uploaded_files = st.file_uploader(
+            "Choisir un ou plusieurs fichiers Excel", 
+            type=['xlsx', 'xls'], 
+            accept_multiple_files=True
+        )
 
-    # Initialisation des variables de session
-    if 'kobo_token' not in st.session_state:
-        st.session_state.kobo_token = None
-    if 'data' not in st.session_state:
-        st.session_state.data = None
-    if 'tables' not in st.session_state:
-        st.session_state.tables = None
+    # --- 2. CHARGEMENT DYNAMIQUE DES MAPPINGS GITHUB EN FONCTION DES PHASES ---
+    # On ne recharge le référentiel que si les phases sélectionnées ont changé
+    current_mappings_key = "-".join(sorted(selected_phases))
+    if st.session_state.get('last_mappings_key') != current_mappings_key:
+        with st.spinner("Chargement et fusion des référentiels cartographiques..."):
+            combined_mappings = {}
+            for phase in selected_phases:
+                url = MAPPINGS_URLS.get(phase)
+                if url:
+                    try:
+                        # Appel à votre logique de téléchargement
+                        response = requests.get(url, timeout=15)
+                        if response.status_code == 200:
+                            df_choices = pd.read_excel(BytesIO(response.content), sheet_name='Choix', dtype=str)
+                            df_choices.columns = df_choices.columns.str.strip()
+                            df_choices = df_choices.dropna(subset=['list_name', 'value'])
+                            
+                            for list_name in df_choices['list_name'].unique():
+                                clean_list_key = str(list_name).strip()
+                                subset = df_choices[df_choices['list_name'] == list_name]
+                                phase_dict = dict(zip(subset['value'].str.strip(), subset['label'].str.strip()))
+                                
+                                # Fusionner sans écraser les autres codes existants
+                                if clean_list_key in combined_mappings:
+                                    combined_mappings[clean_list_key].update(phase_dict)
+                                else:
+                                    combined_mappings[clean_list_key] = phase_dict
+                    except Exception as e:
+                        st.sidebar.error(f"Erreur dictionnaire {phase} : {e}")
+            
+            st.session_state.mappings = combined_mappings
+            st.session_state.last_mappings_key = current_mappings_key
+            st.sidebar.success(f"✅ {len(combined_mappings)} listes de correspondances fusionnées.")
 
-    # --- 2. LOGIQUE DE CONNEXION KOBO ---
+    # --- 3. LOGIQUE DE CONNEXION KOBO ---
     if connect_button and username and password:
         with st.spinner("Authentification en cours..."):
             token = get_kobo_token(server_base, username, password)
@@ -2641,7 +3034,7 @@ def main():
                 st.session_state.kobo_token = token
                 st.success("✅ Connexion réussie !")
 
-    # --- 3. LOGIQUE D'EXTRACTION KOBO ---
+    # --- 4. LOGIQUE D'EXTRACTION KOBO (PAGINATION ACTIVE) ---
     if st.session_state.kobo_token:
         headers = {"Authorization": f"Token {st.session_state.kobo_token}"}
         try:
@@ -2655,87 +3048,131 @@ def main():
                 selected_form = st.selectbox("Choisir le formulaire KoBo :", ["-- Sélectionner --"] + list(forms.keys()))
                 
                 if selected_form != "-- Sélectionner --":
-                    if st.button("📥 Charger les données KoBo"):
-                        with st.spinner('Extraction et calcul des indicateurs...'):
+                    if st.button("📥 Charger la base complète (10 000+ enregistrements)"):
+                        with st.spinner('Extraction en cours... (Patientez pendant la récupération des pages)'):
                             uid = forms[selected_form]
-                            data_url = f"{server_base}/api/v2/assets/{uid}/data.json"
-                            res_data = requests.get(data_url, headers=headers)
+                            all_results = []
+                            next_url = f"{server_base}/api/v2/assets/{uid}/data.json?page_size=1000"
                             
-                            if res_data.status_code == 200:
-                                results = res_data.json().get('results', [])
-                                if results:
-                                    df_raw = pd.DataFrame(results)
-                                    
-                                    # Traitement universel (Mapping + Indicateurs + Nettoyage)
-                                    # Note: Cette fonction doit contenir la logique de mapping S1Q17 -> menage_servi
-                                    data, stats = process_milda_dataframe(df_raw) 
-
-                                    st.write(data[['province', 'centre_sante']].head())
-                                    st.session_state.data = data
-                                    st.session_state.tables = generate_analysis_tables(data)
-                                    st.success(f"✅ {len(data)} enregistrements chargés !")
-                                    st.rerun()
+                            while next_url:
+                                res_data = requests.get(next_url, headers=headers)
+                                if res_data.status_code == 200:
+                                    payload = res_data.json()
+                                    batch = payload.get('results', [])
+                                    all_results.extend(batch)
+                                    next_url = payload.get('next')
                                 else:
-                                    st.warning("Le formulaire sélectionné est vide.")
+                                    st.error(f"Erreur lors de la pagination : {res_data.status_code}")
+                                    break
+                            
+                            if all_results:
+                                df_raw = pd.DataFrame(all_results)
+                                
+                                # Détection automatique de la phase via le nom du formulaire KoBo
+                                detected_phase = selected_phases[0] # Valeur par défaut
+                                for p in selected_phases:
+                                    if p.lower() in selected_form.lower():
+                                        detected_phase = p
+                                        break
+                                
+                                # Traitement du DataFrame en lui injectant le dictionnaire global fusionné
+                                data, stats = process_milda_dataframe(df_raw, st.session_state.mappings) 
+                                data['phase_app'] = detected_phase
+                                
+                                st.session_state.data = data
+                                st.session_state.tables = generate_analysis_tables(data)
+                                st.success(f"✅ {len(data)} enregistrements chargés pour la {detected_phase} !")
+                                st.rerun()
+                            else:
+                                st.warning("Le formulaire sélectionné ne contient aucune donnée.")
             else:
-                st.error("Erreur lors de la récupération de la liste des projets.")
+                st.error("Impossible de récupérer la liste des projets. Vérifiez vos identifiants.")
         except Exception as e:
-            import traceback
-            st.error(f"Erreur KoBo : {e}")
-            st.code(traceback.format_exc())
+            st.error(f"Erreur technique KoBo : {e}")
 
-    # --- 4. LOGIQUE IMPORT EXCEL ---
-    if uploaded_file and st.session_state.data is None:
-        with st.spinner("🔄 Traitement du fichier Excel..."):
-            data, stats = load_and_process_data(uploaded_file)
-            if not data.empty:
-                st.session_state.data = data
-                st.session_state.tables = generate_analysis_tables(data)
+    # --- 5. LOGIQUE IMPORT EXCEL ---
+    if uploaded_files and st.session_state.data is None:
+        with st.spinner("🔄 Traitement et consolidation des fichiers Excel..."):
+            all_dfs = []
+            for file in uploaded_files:
+                df_temp, _ = load_and_process_data(file)
+                if not df_temp.empty:
+                    # Identification de la phase selon le nom du fichier injecté
+                    detected_phase = selected_phases[0]
+                    for p in selected_phases:
+                        if p.lower() in file.name.lower():
+                            detected_phase = p
+                            break
+                    df_temp['phase_app'] = detected_phase
+                    all_dfs.append(df_temp)
+            
+            if all_dfs:
+                consolidated_data = pd.concat(all_dfs, ignore_index=True)
+                st.session_state.data = consolidated_data
+                st.session_state.tables = generate_analysis_tables(consolidated_data)
                 st.rerun()
 
-    # --- 5. AFFICHAGE DES ONGLETS (Si données présentes) ---
+    # --- 6. AFFICHAGE DES ONGLETS (Si données présentes) ---
     if st.session_state.data is not None:
-        data = st.session_state.data
-        tables = st.session_state.tables
+        data_full = st.session_state.data
 
-        # Bouton pour réinitialiser les données
-        if st.sidebar.button("🗑️ Effacer les données"):
+        # Bouton pour vider le cache
+        if st.sidebar.button("🗑️ Effacer les données de l'application"):
             st.session_state.data = None
+            st.session_state.tables = None
             st.rerun()
 
+        # Filtre d'affichage dynamique en haut de page si plusieurs phases sont présentes
+        st.markdown(f"### 📊 Analyse consolidée : {', '.join(selected_phases)}")
+        
+        if 'phase_app' in data_full.columns:
+            options_filtre = ["Toutes les phases"] + list(data_full['phase_app'].unique())
+            filtre_phase = st.radio("Filtrer l'affichage dynamique :", options=options_filtre, horizontal=True)
+            
+            if filtre_phase != "Toutes les phases":
+                data_active = data_full[data_full['phase_app'] == filtre_phase].copy()
+                tables_active = generate_analysis_tables(data_active)
+            else:
+                data_active = data_full.copy()
+                tables_active = st.session_state.tables
+        else:
+            data_active = data_full.copy()
+            tables_active = st.session_state.tables
+
+        # Menu à onglets principal
         tabs = st.tabs([
             "🏠 Dashboard", "🔍 Analyse", "🗺️ Cartographie", 
             "🏃 Suivi Agents", "🛡️ Qualité", "📊 Statistiques", 
             "📥 Export", "📥 Rapport Final"
         ])
 
-        with tabs[0]: page_dashboard(data, tables)
-        with tabs[1]: page_analysis(data, tables)
-        with tabs[2]: page_maps(data)
-        with tabs[3]: page_agent_tracking(data)
-        with tabs[4]: page_data_quality(data)
-        with tabs[5]: page_statistics(data)
-        with tabs[6]: page_export(data, tables)
+        with tabs[0]: page_dashboard(data_active, tables_active)
+        with tabs[1]: page_analysis(data_active, tables_active)
+        with tabs[2]: page_maps(data_active)
+        with tabs[3]: page_agent_tracking(data_active)
+        with tabs[4]: page_data_quality(data_active)
+        with tabs[5]: page_statistics(data_active)
+        with tabs[6]: page_export(data_active, tables_active)
         with tabs[7]:
             st.markdown("## 📊 Rapport de Synthèse Automatique")
-            download_automatic_report_button(data, tables)
+            download_automatic_report_button(data_active, tables_active)
     
     else:
-        # Message d'accueil / Aide
-        st.info("👆 Connectez-vous à KoBo (Sidebar) ou importez un fichier Excel pour générer les analyses.")
+        # Écran d'accueil informatif
+        st.info("👆 Connectez-vous à KoBo ou importez un ou plusieurs fichiers Excel (Sidebar) pour générer les analyses.")
         
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### 📋 Structure attendue")
             st.code("province, district, village\ndate_enquete\nmenage_servi (Oui/Non)\nnb_personnes\nnb_milda_recues", language="text")
         with col2:
-            st.markdown("### ⚙️ Paramètres actuels")
+            st.markdown("### ⚙️ Paramètres système détectés")
             st.write(f"Version DOCX : {'✅ OK' if DOCX_AVAILABLE else '❌ Absent'}")
             st.write(f"Version Stats : {'✅ OK' if STATS_AVAILABLE else '❌ Absent'}")
 
-    # Footer
+    # Pied de page
     st.markdown("---")
-    st.caption(f"🦟 MILDA Dashboard v1.2 | {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    st.caption(f"🦟 Hub National Multi-Phases MILDA | Extraction synchronisée le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
 
 if __name__ == "__main__":
     main()
