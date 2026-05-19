@@ -3156,7 +3156,70 @@ def main():
         with cb2:
             st.markdown(f"<div style='text-align:center;padding:.5rem;'><b>{n_sel}</b> formulaire(s) sélectionné(s)</div>", unsafe_allow_html=True)
         with cc2:
-            if st.button(f"Charger {n_sel} →", use_container_width=True, key="k2_load", disabled=(n_sel == 0)):
+            if st.button(f"Suivant →", use_container_width=True, key="k2_load", disabled=(n_sel == 0)):
+                st.session_state['kobo_step'] = 25
+                st.rerun()
+        st.stop()
+
+    # ÉTAPE 2.5 : Attribution des phases aux formulaires
+    elif kobo_step == 25:
+        forms    = st.session_state.get('kobo_forms', [])
+        selected = st.session_state.get('kobo_selected', {})
+        sel_uids = [u for u, v in selected.items() if v]
+        fnames   = {f["uid"]: f["name"] for f in forms}
+        phases_dispo = list(MAPPINGS_URLS.keys())  # ["Phase 1", "Phase 2", "Phase 3"]
+
+        st.markdown("---")
+        st.markdown("### 🏷️ Connexion KoBoToolbox — Étape 2b/3 : Attribution des phases")
+        st.caption("Indiquez à quelle phase appartient chaque formulaire sélectionné.")
+
+        # Couleurs par phase pour un repère visuel
+        phase_colors = {"Phase 1": "#3b82f6", "Phase 2": "#10b981", "Phase 3": "#f59e0b"}
+
+        phase_assignments = st.session_state.get('kobo_phase_assignments', {})
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        for uid in sel_uids:
+            nm = fnames.get(uid, uid)
+            col_name, col_sel = st.columns([2, 1])
+            with col_name:
+                st.markdown(f"**📋 {nm}**<br><small style='color:#64748b;'>{uid}</small>", unsafe_allow_html=True)
+            with col_sel:
+                # Tente de pré-détecter la phase depuis le nom du formulaire
+                default_idx = 0
+                for i, p in enumerate(phases_dispo):
+                    if p.lower() in nm.lower() or f"phase{i+1}" in nm.lower().replace(" ", ""):
+                        default_idx = i
+                        break
+                # Si déjà assigné, reprendre la valeur
+                if uid in phase_assignments and phase_assignments[uid] in phases_dispo:
+                    default_idx = phases_dispo.index(phase_assignments[uid])
+                chosen = st.selectbox(
+                    "Phase",
+                    options=phases_dispo,
+                    index=default_idx,
+                    key=f"phase_sel_{uid}",
+                    label_visibility="collapsed"
+                )
+                color = phase_colors.get(chosen, "#6b7280")
+                st.markdown(
+                    f"<div style='background:{color}22;border-left:3px solid {color};"
+                    f"padding:2px 8px;border-radius:4px;font-size:.8rem;color:{color};font-weight:600;'>"
+                    f"{chosen}</div>",
+                    unsafe_allow_html=True
+                )
+                phase_assignments[uid] = chosen
+            st.divider()
+
+        st.session_state['kobo_phase_assignments'] = phase_assignments
+
+        ca3, cb3 = st.columns([1, 3])
+        with ca3:
+            if st.button("← Retour", key="k25_back"):
+                st.session_state['kobo_step'] = 2
+                st.rerun()
+        with cb3:
+            if st.button("⬇️ Télécharger et traiter →", use_container_width=True, key="k25_next"):
                 st.session_state['kobo_step'] = 3
                 st.rerun()
         st.stop()
@@ -3169,6 +3232,7 @@ def main():
         selected = st.session_state.get('kobo_selected', {})
         sel_uids = [u for u, v in selected.items() if v]
         fnames   = {f["uid"]: f["name"] for f in forms}
+        phase_assignments = st.session_state.get('kobo_phase_assignments', {})
 
         st.markdown("---")
         st.markdown(f"### ⬇️ Connexion KoBoToolbox — Étape 3/3 : Téléchargement")
@@ -3186,7 +3250,7 @@ def main():
             if err:
                 logs.append(f"❌ **{nm}** — {err}")
             else:
-                dfs_k[nm] = df if df is not None else pd.DataFrame()
+                dfs_k[uid] = (nm, df if df is not None else pd.DataFrame())
                 n_rec = len(df) if df is not None else 0
                 n_col = len(df.columns) if df is not None else 0
                 logs.append(f"✅ **{nm}** — {n_rec:,} enregistrements, {n_col} champs")
@@ -3199,13 +3263,16 @@ def main():
         if dfs_k:
             # Traitement et injection dans le session_state
             all_dfs = []
-            for fnm, df_raw in dfs_k.items():
-                detected_phase = selected_phases[0]
-                for p in selected_phases:
-                    if p.lower() in fnm.lower():
-                        detected_phase = p
-                        break
-                with st.spinner(f"Traitement de {fnm}…"):
+            for uid, (fnm, df_raw) in dfs_k.items():
+                # Phase assignée manuellement à l'étape 2b (priorité) ou auto-détectée
+                detected_phase = phase_assignments.get(uid)
+                if not detected_phase:
+                    detected_phase = selected_phases[0]
+                    for p in selected_phases:
+                        if p.lower() in fnm.lower():
+                            detected_phase = p
+                            break
+                with st.spinner(f"Traitement de {fnm} ({detected_phase})…"):
                     data_proc, _ = process_milda_dataframe(df_raw)
                 data_proc['phase_app'] = detected_phase
                 all_dfs.append(data_proc)
