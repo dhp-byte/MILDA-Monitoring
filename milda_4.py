@@ -675,7 +675,7 @@ MAPPINGS_URLS = {
     "Phase 2": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_2.xlsx",
     "Phase 3": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_3.xlsx" # À adapter si le nom change
 }
-mappings = load_github_mappings(GITHUB_URL)
+mappings = load_multiple_github_mappings(MAPPINGS_URLS)
 
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
