@@ -680,8 +680,13 @@ mappings = load_multiple_github_mappings(MAPPINGS_URLS)
 ################################################################################
 # FONCTIONS DE TRAITEMENT DES DONNÉES
 ################################################################################
-def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-    """Applique la logique métier commune à Excel et KoBo"""
+def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> Tuple[pd.DataFrame, Dict]:
+    """Applique la logique métier commune à Excel et KoBo.
+    mappings_dict : dictionnaire de correspondances codes->labels pour la phase concernée.
+    Si None, utilise st.session_state.mappings ou la variable globale mappings.
+    """
+    if mappings_dict is None:
+        mappings_dict = st.session_state.get('mappings') or mappings or {}
     # 1. Mapping des colonnes (votre dictionnaire existant)
     column_mapping = {
             'province': ['province', 'Province', 'S0Q02'],
@@ -728,7 +733,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                 break
     data = data.rename(columns=rename_dict)
 
-    if mappings:
+    if mappings_dict:
         # Configuration étendue avec vos nouvelles variables
         config = {
             'province': 'province',
@@ -758,7 +763,7 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                     .str.replace(r'^nan$', '', regex=True)  # ← CORRIGÉ : str.replace() au lieu de .replace()
                 )
                 
-                if list_name in mappings:
+                if list_name in mappings_dict:
                     if col in multi_choice_cols:
                         # --- LOGIQUE POUR CHOIX MULTIPLES ---
                         def decode_multi(val, mapping_dict):
@@ -767,10 +772,10 @@ def process_milda_dataframe(data: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
                             labels = [mapping_dict.get(c, c) for c in codes]
                             return ", ".join(labels)
                         
-                        data[col] = data[col].apply(lambda x: decode_multi(x, mappings[list_name]))
+                        data[col] = data[col].apply(lambda x: decode_multi(x, mappings_dict[list_name]))
                     else:
                         # --- LOGIQUE POUR CHOIX UNIQUE ---
-                        data[col] = data[col].replace(mappings[list_name])
+                        data[col] = data[col].replace(mappings_dict[list_name])
                 
     # Traitement spécial GPS pour KoBo (si format liste [lat, long])
     if 'latitude' in data.columns and isinstance(data['latitude'].iloc[0], list):
@@ -3265,10 +3270,33 @@ def main():
             phase_buckets = {}   # {"Phase 1": [df, df, …], "Phase 2": […], …}
             all_dfs       = []   # consolidation globale
 
+            # Charger les mappings de chaque phase nécessaire
+            phases_needed = set(phase_assignments.values())
+            phase_mappings_cache = {}
+            for phase in phases_needed:
+                url = MAPPINGS_URLS.get(phase)
+                if url:
+                    try:
+                        resp = requests.get(url, timeout=15)
+                        if resp.status_code == 200:
+                            df_ch = pd.read_excel(BytesIO(resp.content), sheet_name='Choix', dtype=str)
+                            df_ch.columns = df_ch.columns.str.strip()
+                            df_ch = df_ch.dropna(subset=['list_name', 'value'])
+                            pm = {}
+                            for ln in df_ch['list_name'].unique():
+                                sub = df_ch[df_ch['list_name'] == ln]
+                                pm[str(ln).strip()] = dict(zip(sub['value'].str.strip(), sub['label'].str.strip()))
+                            phase_mappings_cache[phase] = pm
+                            st.info(f"📖 Dictionnaire {phase} chargé ({len(pm)} listes)")
+                    except Exception as e:
+                        st.warning(f"⚠️ Impossible de charger le dictionnaire {phase} : {e}")
+                        phase_mappings_cache[phase] = {}
+
             for uid, (fnm, df_raw) in dfs_k.items():
                 detected_phase = phase_assignments.get(uid, selected_phases[0])
+                phase_map = phase_mappings_cache.get(detected_phase, {})
                 with st.spinner(f"Traitement de {fnm} ({detected_phase})…"):
-                    data_proc, _ = process_milda_dataframe(df_raw)
+                    data_proc, _ = process_milda_dataframe(df_raw, mappings_dict=phase_map)
                 data_proc['phase_app'] = detected_phase
                 phase_buckets.setdefault(detected_phase, []).append(data_proc)
                 all_dfs.append(data_proc)
@@ -3338,9 +3366,34 @@ def main():
                     "Phase 2": "data_phase_2",
                     "Phase 3": "data_phase_3",
                 }
+                # Recharger les mappings par phase pour l'import Excel aussi
+                phase_mappings_xl = {}
+                for phase in phase_buckets_xl:
+                    url = MAPPINGS_URLS.get(phase)
+                    if url:
+                        try:
+                            resp = requests.get(url, timeout=15)
+                            if resp.status_code == 200:
+                                df_ch = pd.read_excel(BytesIO(resp.content), sheet_name='Choix', dtype=str)
+                                df_ch.columns = df_ch.columns.str.strip()
+                                df_ch = df_ch.dropna(subset=['list_name', 'value'])
+                                pm = {}
+                                for ln in df_ch['list_name'].unique():
+                                    sub = df_ch[df_ch['list_name'] == ln]
+                                    pm[str(ln).strip()] = dict(zip(sub['value'].str.strip(), sub['label'].str.strip()))
+                                phase_mappings_xl[phase] = pm
+                        except Exception:
+                            phase_mappings_xl[phase] = {}
+
                 for phase, key in phase_key_map.items():
                     if phase in phase_buckets_xl:
-                        df_p = pd.concat(phase_buckets_xl[phase], ignore_index=True)
+                        phase_map = phase_mappings_xl.get(phase, {})
+                        # Re-traiter chaque df brut avec le bon mapping
+                        dfs_reprocessed = []
+                        for df_p_raw in phase_buckets_xl[phase]:
+                            df_p_proc, _ = process_milda_dataframe(df_p_raw, mappings_dict=phase_map)
+                            dfs_reprocessed.append(df_p_proc)
+                        df_p = pd.concat(dfs_reprocessed, ignore_index=True)
                         st.session_state[key]             = df_p
                         st.session_state[key + "_tables"] = generate_analysis_tables(df_p)
                     else:
