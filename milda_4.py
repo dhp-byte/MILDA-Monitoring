@@ -823,10 +823,42 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
     if 'date_enquete' in data.columns:
         data['date_enquete'] = pd.to_datetime(data['date_enquete'], errors='coerce')
 
+    # ── Garantie des colonnes attendues par les pages (évite les KeyError) ────
+    # Géolocalisation
+    for geo_col in ['latitude', 'longitude']:
+        if geo_col not in data.columns:
+            data[geo_col] = np.nan
+        else:
+            data[geo_col] = pd.to_numeric(data[geo_col], errors='coerce')
+
+    # Timestamp de fin (utilisé par page_agent_tracking)
+    if 'end_dt' not in data.columns:
+        if 'heure_interview' in data.columns:
+            data['end_dt'] = pd.to_datetime(data['heure_interview'], errors='coerce')
+        elif 'date_enquete' in data.columns:
+            data['end_dt'] = data['date_enquete']
+        else:
+            data['end_dt'] = pd.NaT
+
+    # Colonnes texte optionnelles
+    for opt_col in ['agent_name', 'village', 'centre_sante', 'district', 'province',
+                    'sexe', 'activ_rev', 'raison', 'conseil', 'source', 'raison_scan',
+                    'menage_chef', 'respondant_col', 'sensibilise', 'id_scan']:
+        if opt_col not in data.columns:
+            data[opt_col] = np.nan
+
+    # Colonnes numériques optionnelles
+    for num_col in ['nb_personnes', 'nb_milda_recues', 'nb_milda_attendues',
+                    'ecart_distribution', 'indic_servi', 'indic_correct',
+                    'indic_marque', 'indic_info']:
+        if num_col not in data.columns:
+            data[num_col] = 0
+
     stats = {
         'total_rows': len(data),
         'total_provinces': data['province'].nunique() if 'province' in data.columns else 0,
         'date_range': (data['date_enquete'].min(), data['date_enquete'].max())
+                      if 'date_enquete' in data.columns else (None, None)
     }
     return data, stats
 
