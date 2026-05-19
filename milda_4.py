@@ -671,7 +671,7 @@ def load_multiple_github_mappings(selected_phases: List[str]) -> Dict:
 # URL vers votre fichier (format RAW)
 # URLs vers les fichiers d'onglets 'Choix' de chaque phase (Format RAW requis)
 MAPPINGS_URLS = {
-    "Phase 1": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix.xlsx",
+    "Phase 1": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_1.xlsx",
     "Phase 2": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_2.xlsx",
     "Phase 3": "https://github.com/dhp-byte/MILDA-Monitoring/raw/main/Choix_Phase_3.xlsx" # À adapter si le nom change
 }
