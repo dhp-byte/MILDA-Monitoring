@@ -832,17 +832,32 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
             data[geo_col] = pd.to_numeric(data[geo_col], errors='coerce')
 
     # Timestamp de fin (utilisé par page_agent_tracking)
+    def _safe_parse_dt(val):
+        """Parse une valeur datetime tolérante aux formats mixtes et fuseaux horaires."""
+        try:
+            s = str(val).strip()
+            if not s or s in ('nan', 'NaT', 'None', ''):
+                return pd.NaT
+            dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+            if pd.isnull(dt):
+                return pd.NaT
+            # Supprimer le fuseau horaire pour éviter les conflits de comparaison
+            if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+                dt = dt.tz_localize(None)
+            return dt
+        except Exception:
+            return pd.NaT
+
     if 'end_dt' not in data.columns:
         if 'heure_interview' in data.columns:
-            # Conversion tolérante : format=mixed gère les valeurs hétérogènes
-            data['end_dt'] = pd.to_datetime(
-                data['heure_interview'].astype(str).str.strip(),
-                format='mixed', dayfirst=True, errors='coerce'
-            )
+            data['end_dt'] = data['heure_interview'].apply(_safe_parse_dt)
         elif 'date_enquete' in data.columns:
-            data['end_dt'] = data['date_enquete']
+            data['end_dt'] = data['date_enquete'].apply(_safe_parse_dt)
         else:
             data['end_dt'] = pd.NaT
+    else:
+        # Nettoyer end_dt si elle existe déjà (peut aussi avoir des TZ mixtes)
+        data['end_dt'] = data['end_dt'].apply(_safe_parse_dt)
 
     # Colonnes texte optionnelles
     for opt_col in ['agent_name', 'village', 'centre_sante', 'district', 'province',
