@@ -777,37 +777,53 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
                         # --- LOGIQUE POUR CHOIX UNIQUE ---
                         data[col] = data[col].replace(mappings_dict[list_name])
                 
-    # ── Traitement GPS KoBo (formats multiples) ─────────────────────────────────
-    # Cas 1 : colonne _geolocation contenant une liste [lat, lon, alt, acc]
+    # ── Traitement GPS KoBo (formats multiples via apply) ───────────────────────
+    def _parse_coord(val, idx):
+        """Extrait lat (idx=0) ou lon (idx=1) depuis tous les formats KoBo possibles."""
+        try:
+            # Format liste Python : [lat, lon, alt, acc]
+            if isinstance(val, (list, tuple)) and len(val) > idx:
+                return float(val[idx])
+            # Format string liste : "[3.876, 15.123, 0, 0]"
+            if isinstance(val, str):
+                s = val.strip()
+                if s in ('', 'nan', 'None', 'NaN'):
+                    return np.nan
+                if s.startswith('[') or ',' in s:
+                    parts = s.replace('[', '').replace(']', '').split(',')
+                    if len(parts) > idx:
+                        return float(parts[idx].strip())
+                # Format float direct en string : "3.876"
+                return float(s) if idx == 0 else np.nan
+            # Format numérique direct
+            if isinstance(val, (int, float)):
+                return float(val) if idx == 0 else np.nan
+        except Exception:
+            pass
+        return np.nan
+
+    # Cas 1 : colonne _geolocation [lat, lon, alt, acc]
     if '_geolocation' in data.columns:
-        def _extract_geo(val, idx):
-            if isinstance(val, list) and len(val) > idx:
-                return val[idx]
-            if isinstance(val, str) and val.strip() not in ('', 'nan', 'None'):
-                parts = val.replace('[','').replace(']','').split(',')
-                try: return float(parts[idx])
-                except Exception: return np.nan
-            return np.nan
         if 'latitude' not in data.columns or data['latitude'].isna().all():
-            data['latitude']  = data['_geolocation'].apply(lambda x: _extract_geo(x, 0))
+            data['latitude']  = data['_geolocation'].apply(lambda x: _parse_coord(x, 0))
         if 'longitude' not in data.columns or data['longitude'].isna().all():
-            data['longitude'] = data['_geolocation'].apply(lambda x: _extract_geo(x, 1))
+            data['longitude'] = data['_geolocation'].apply(lambda x: _parse_coord(x, 1))
 
     # Cas 2 : colonne latitude contenant une liste [lat, lon, ...]
     if 'latitude' in data.columns:
         first_valid = data['latitude'].dropna().iloc[0] if data['latitude'].notna().any() else None
-        if isinstance(first_valid, list):
-            coords = data['latitude']
-            data['latitude']  = coords.apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else np.nan)
-            data['longitude'] = coords.apply(lambda x: x[1] if isinstance(x, list) and len(x) > 1 else np.nan)
+        if isinstance(first_valid, (list, tuple, str)) and not isinstance(first_valid, float):
+            coords = data['latitude'].copy()
+            data['latitude']  = coords.apply(lambda x: _parse_coord(x, 0))
+            data['longitude'] = coords.apply(lambda x: _parse_coord(x, 1))
 
     # Cas 3 : colonnes avec préfixe (ex: LES_COORDONNEES_GEOGRAPHIQUES_latitude)
     for c in data.columns:
         cl = c.lower()
-        if 'latitude' in cl and 'latitude' not in data.columns:
-            data['latitude'] = pd.to_numeric(data[c], errors='coerce')
-        if 'longitude' in cl and 'longitude' not in data.columns:
-            data['longitude'] = pd.to_numeric(data[c], errors='coerce')
+        if 'latitude' in cl and c != 'latitude' and                 ('latitude' not in data.columns or data['latitude'].isna().all()):
+            data['latitude']  = data[c].apply(lambda x: _parse_coord(x, 0))
+        if 'longitude' in cl and c != 'longitude' and                 ('longitude' not in data.columns or data['longitude'].isna().all()):
+            data['longitude'] = data[c].apply(lambda x: _parse_coord(x, 1))  # idx=1 pour longitude
         
     
     # Normalisation Oui/Non
@@ -850,12 +866,17 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
         data['date_enquete'] = pd.to_datetime(data['date_enquete'], errors='coerce')
 
     # ── Garantie des colonnes attendues par les pages (évite les KeyError) ────
-    # Géolocalisation
+    # Géolocalisation : initialiser seulement si absentes (ne pas écraser les valeurs GPS extraites)
     for geo_col in ['latitude', 'longitude']:
         if geo_col not in data.columns:
             data[geo_col] = np.nan
         else:
-            data[geo_col] = pd.to_numeric(data[geo_col], errors='coerce')
+            # Convertir en numérique seulement si pas déjà fait (valeurs non-float restantes)
+            data[geo_col] = data[geo_col].apply(
+                lambda x: float(x) if isinstance(x, (int, float)) and not isinstance(x, bool)
+                else (np.nan if pd.isna(x) or str(x).strip() in ('', 'nan', 'None', 'NaN')
+                      else pd.to_numeric(x, errors='coerce'))
+            )
 
     # Timestamp de fin (utilisé par page_agent_tracking)
     def _safe_parse_dt(val):
@@ -2504,18 +2525,18 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         doc.add_heading('PRINCIPAUX INDICATEURS PAR PROVINCE', level=1)
         doc.add_paragraph("Ce tableau compare la performance globale de chaque province pour l'ensemble des indicateurs clés de la CDM-2026.")
     
-        # 1. Agrégation des données par Province
+        # 1. Agrégation correcte des données par Province
         prov_stats = data.groupby('province').agg(
-            nb_menages=('indic_servi', 'count'),
-            servis=('indic_servi', 'sum'),
-            marques=('indic_marque', 'sum'),
-            corrects=('indic_correct', 'sum')
+            nb_menages=('indic_servi', 'count'),   # Modifié : 'count' compte les lignes
+            servis=('indic_servi', 'sum'),         # Somme des 1 pour les ménages servis
+            marques=('indic_marque', 'sum'),       # Somme des 1 pour les ménages marqués
+            corrects=('indic_correct', 'sum')      # Modifié : 'sum' pour additionner les ménages conformes
         ).reset_index()
     
-        # 2. Calcul des indicateurs de performance
+        # 2. Calcul des indicateurs de performance (sécurisé)
         prov_stats['% Couverture'] = (prov_stats['servis'] / prov_stats['nb_menages'] * 100).round(1)
-        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'] * 100).round(1)
-        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'] * 100).round(1)
+        prov_stats['% Marquage'] = (prov_stats['marques'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
+        prov_stats['% Qualité (Correct)'] = (prov_stats['corrects'] / prov_stats['servis'].replace(0, np.nan)).astype(float).round(1).fillna(0)
     
         # Tri par performance de couverture (du meilleur au moins bon)
         prov_stats = prov_stats.sort_values('% Couverture', ascending=False)
@@ -2533,7 +2554,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
         for _, row in prov_stats.iterrows():
             table_data.append([
                 str(row['province']),
-                f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage des milliers
+                f"{int(row['nb_menages']):,}".replace(',', ' '), # Formatage espace pour milliers
                 f"{row['% Couverture']}%",
                 f"{row['% Marquage']}%",
                 f"{row['% Qualité (Correct)']}%"
@@ -2553,9 +2574,9 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             f"{round(100 * total_c / total_n, 1)}%" if total_s > 0 else "0%"
         ])
     
-        # 5. Création du tableau
+        # 5. Création du tableau dans le document Word
         create_table(doc, table_data, table_headers)
-        
+          
         doc.add_paragraph("Note : Le % Qualité représente la proportion de ménages servis ayant reçu la MILDA conformément aux procédures standards.").italic = True
         # --- AJOUT DU GRAPHIQUE DE COMPARAISON ---
         doc.add_heading('Comparaison visuelle de la couverture par Province (%)', level=2)
