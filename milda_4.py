@@ -3601,6 +3601,24 @@ def main():
             unsafe_allow_html=True
         )
 
+        # ── Diagnostic GPS (expander discret) ───────────────────────────────
+        with st.expander("🔍 Diagnostic GPS (cliquer pour voir)", expanded=False):
+            geo_cols = [c for c in data_active.columns if any(
+                kw in c.lower() for kw in ['lat','lon','geo','coord','gps','location']
+            )]
+            st.write(f"**Colonnes GPS détectées :** {geo_cols if geo_cols else 'Aucune'}")
+            if 'latitude' in data_active.columns:
+                n_valid = data_active['latitude'].notna().sum()
+                st.write(f"**latitude** : {n_valid}/{len(data_active)} valeurs non-nulles")
+                st.write(f"Exemples : {data_active['latitude'].dropna().head(3).tolist()}")
+            if 'longitude' in data_active.columns:
+                n_valid = data_active['longitude'].notna().sum()
+                st.write(f"**longitude** : {n_valid}/{len(data_active)} valeurs non-nulles")
+                st.write(f"Exemples : {data_active['longitude'].dropna().head(3).tolist()}")
+            if '_geolocation' in data_active.columns:
+                st.write(f"**_geolocation** exemples : {data_active['_geolocation'].dropna().head(3).tolist()}")
+            st.write(f"**Toutes les colonnes :** {list(data_active.columns)}")
+
         # ── Menu à onglets ────────────────────────────────────────────────────
         tabs = st.tabs([
             "🏠 Dashboard", "🔍 Analyse", "🗺️ Cartographie",
