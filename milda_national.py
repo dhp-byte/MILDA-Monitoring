@@ -792,18 +792,12 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
                 if s.startswith('[') or ',' in s:
                     parts = s.replace('[', '').replace(']', '').split(',')
                     if len(parts) > idx:
-                        try:
-                            return float(parts[idx].strip())
-                        except ValueError:
-                            return np.nan
+                        return float(parts[idx].strip())
                 # Format float direct en string : "3.876"
-                try:
-                    return float(s) if idx == 0 else np.nan
-                except ValueError:
-                    return np.nan
+                return float(s) if idx == 0 else np.nan
             # Format numérique direct
             if isinstance(val, (int, float)):
-                return float(val)
+                return float(val) if idx == 0 else np.nan
         except Exception:
             pass
         return np.nan
@@ -3606,6 +3600,24 @@ def main():
             f" &nbsp;·&nbsp; <span style='color:#374151;'>{n_rec:,} enregistrements</span></div>",
             unsafe_allow_html=True
         )
+
+        # ── Diagnostic GPS (expander discret) ───────────────────────────────
+        with st.expander("🔍 Diagnostic GPS (cliquer pour voir)", expanded=False):
+            geo_cols = [c for c in data_active.columns if any(
+                kw in c.lower() for kw in ['lat','lon','geo','coord','gps','location']
+            )]
+            st.write(f"**Colonnes GPS détectées :** {geo_cols if geo_cols else 'Aucune'}")
+            if 'latitude' in data_active.columns:
+                n_valid = data_active['latitude'].notna().sum()
+                st.write(f"**latitude** : {n_valid}/{len(data_active)} valeurs non-nulles")
+                st.write(f"Exemples : {data_active['latitude'].dropna().head(3).tolist()}")
+            if 'longitude' in data_active.columns:
+                n_valid = data_active['longitude'].notna().sum()
+                st.write(f"**longitude** : {n_valid}/{len(data_active)} valeurs non-nulles")
+                st.write(f"Exemples : {data_active['longitude'].dropna().head(3).tolist()}")
+            if '_geolocation' in data_active.columns:
+                st.write(f"**_geolocation** exemples : {data_active['_geolocation'].dropna().head(3).tolist()}")
+            st.write(f"**Toutes les colonnes :** {list(data_active.columns)}")
 
         # ── Menu à onglets ────────────────────────────────────────────────────
         tabs = st.tabs([
