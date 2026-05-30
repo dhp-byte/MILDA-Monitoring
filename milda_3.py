@@ -63,100 +63,373 @@ st.set_page_config(
     }
 )
 
-# Thème et styles personnalisés
+# Thème et styles personnalisés — Mission Control Edition
 CUSTOM_CSS = """
 <style>
-    /* En-tête principal */
-    .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    
-    /* Cartes KPI */
-    .kpi-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border-left: 4px solid #667eea;
-        margin-bottom: 1rem;
-    }
-    
-    .kpi-value {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #667eea;
-        margin: 0;
-    }
-    
-    .kpi-label {
-        font-size: 0.9rem;
-        color: #666;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    .kpi-trend {
-        font-size: 0.8rem;
-        margin-top: 0.5rem;
-    }
-    
-    .trend-up { color: #10b981; }
-    .trend-down { color: #ef4444; }
-    .trend-neutral { color: #6b7280; }
-    
-    /* Alertes */
-    .alert-box {
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-    }
-    
-    .alert-success { background-color: #d1fae5; border-left: 4px solid #10b981; }
-    .alert-warning { background-color: #fef3c7; border-left: 4px solid #f59e0b; }
-    .alert-danger { background-color: #fee2e2; border-left: 4px solid #ef4444; }
-    .alert-info { background-color: #dbeafe; border-left: 4px solid #3b82f6; }
-    
-    /* Filtres */
-    .filter-section {
-        background: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin-bottom: 1.5rem;
-    }
-    
-    /* Tables améliorées */
-    .dataframe {
-        font-size: 0.9rem !important;
-    }
-    
-    /* Badges */
-    .badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 600;
-    }
-    
-    .badge-success { background-color: #d1fae5; color: #065f46; }
-    .badge-warning { background-color: #fef3c7; color: #92400e; }
-    .badge-danger { background-color: #fee2e2; color: #991b1b; }
-    
-    /* Animation de chargement */
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
-    
-    .loading-pulse {
-        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;600;700;900&family=Barlow:wght@300;400;500;600&family=Share+Tech+Mono&display=swap');
+
+:root {
+    --bg-deep:    #080d12;
+    --bg-panel:   #0e1820;
+    --bg-card:    #121e28;
+    --bg-card2:   #162130;
+    --border:     rgba(0,230,130,0.12);
+    --border2:    rgba(0,230,130,0.28);
+    --accent:     #00e682;
+    --accent2:    #00b8ff;
+    --accent3:    #ff6b35;
+    --warn:       #ffcc00;
+    --danger:     #ff3d5a;
+    --text:       #e8f0f8;
+    --text-muted: #6a8aaa;
+    --text-dim:   #3d5870;
+    --glow:       0 0 20px rgba(0,230,130,0.25);
+    --glow2:      0 0 20px rgba(0,184,255,0.20);
+}
+
+/* ─── Reset de base Streamlit ─── */
+.stApp { background: var(--bg-deep) !important; }
+section[data-testid="stSidebar"] > div:first-child {
+    background: var(--bg-panel) !important;
+    border-right: 1px solid var(--border2);
+}
+.block-container { padding-top: 1rem !important; }
+h1,h2,h3,h4 { font-family: 'Barlow Condensed', sans-serif !important; letter-spacing:.04em; }
+p, div, span, label { font-family: 'Barlow', sans-serif !important; }
+code, pre { font-family: 'Share Tech Mono', monospace !important; }
+
+/* ─── Scrollbar personnalisée ─── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg-panel); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ─── En-tête principal ─── */
+.main-header {
+    position: relative;
+    background: linear-gradient(135deg, #071525 0%, #0a1e2e 50%, #071525 100%);
+    border: 1px solid var(--border2);
+    border-radius: 0;
+    padding: 2.2rem 3rem;
+    color: var(--text);
+    text-align: center;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+.main-header::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+        0deg, transparent, transparent 39px,
+        rgba(0,230,130,0.04) 39px, rgba(0,230,130,0.04) 40px
+    );
+    pointer-events: none;
+}
+.main-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
+    animation: scanline 3s linear infinite;
+}
+@keyframes scanline {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.4; }
+    100% { opacity: 1; }
+}
+.main-header h1 {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 2.8rem !important;
+    font-weight: 900 !important;
+    letter-spacing: .12em !important;
+    text-transform: uppercase;
+    color: var(--text) !important;
+    margin: 0 !important;
+    text-shadow: 0 0 40px rgba(0,230,130,0.3);
+}
+.header-sub {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: .78rem;
+    color: var(--accent);
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    margin-top: .5rem;
+    opacity: .85;
+}
+.header-badge {
+    display: inline-block;
+    background: rgba(0,230,130,0.1);
+    border: 1px solid var(--border2);
+    color: var(--accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: .65rem;
+    letter-spacing: .15em;
+    padding: .25rem .8rem;
+    border-radius: 0;
+    margin-top: .8rem;
+}
+
+/* ─── Cartes KPI ─── */
+.kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-top: 2px solid var(--accent);
+    border-radius: 0;
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1rem;
+    position: relative;
+    transition: border-color .2s, box-shadow .2s;
+}
+.kpi-card:hover {
+    border-color: var(--border2);
+    box-shadow: var(--glow);
+}
+.kpi-card.warn  { border-top-color: var(--warn); }
+.kpi-card.alert { border-top-color: var(--danger); }
+.kpi-card.info  { border-top-color: var(--accent2); }
+
+.kpi-label {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: .68rem !important;
+    color: var(--text-muted) !important;
+    text-transform: uppercase;
+    letter-spacing: .18em;
+    margin: 0 0 .5rem 0 !important;
+}
+.kpi-value {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 3rem !important;
+    font-weight: 700 !important;
+    color: var(--accent) !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+    text-shadow: 0 0 20px rgba(0,230,130,0.4);
+}
+.kpi-card.warn  .kpi-value { color: var(--warn)   !important; text-shadow: 0 0 20px rgba(255,204,0,0.4); }
+.kpi-card.alert .kpi-value { color: var(--danger) !important; text-shadow: 0 0 20px rgba(255,61,90,0.4); }
+.kpi-card.info  .kpi-value { color: var(--accent2)!important; text-shadow: 0 0 20px rgba(0,184,255,0.4); }
+
+.kpi-trend {
+    font-family: 'Barlow', sans-serif !important;
+    font-size: .75rem !important;
+    margin-top: .5rem !important;
+    display: flex; align-items: center; gap: .4rem;
+}
+.trend-up      { color: var(--accent)  !important; }
+.trend-down    { color: var(--danger)  !important; }
+.trend-neutral { color: var(--warn)    !important; }
+
+.kpi-corner {
+    position: absolute;
+    top: .5rem; right: .7rem;
+    font-size: 1.4rem;
+    opacity: .18;
+}
+
+/* ─── Alertes ─── */
+.alert-box {
+    padding: .8rem 1.2rem;
+    border-radius: 0;
+    margin: .5rem 0;
+    border-left: 3px solid;
+    display: flex; align-items: flex-start; gap: .7rem;
+    font-family: 'Barlow', sans-serif;
+    font-size: .85rem;
+}
+.alert-success {
+    background: rgba(0,230,130,0.06);
+    border-color: var(--accent);
+    color: #8ff5c8;
+}
+.alert-warning {
+    background: rgba(255,204,0,0.06);
+    border-color: var(--warn);
+    color: #ffe580;
+}
+.alert-danger {
+    background: rgba(255,61,90,0.08);
+    border-color: var(--danger);
+    color: #ff9aaa;
+}
+.alert-info {
+    background: rgba(0,184,255,0.06);
+    border-color: var(--accent2);
+    color: #80d8ff;
+}
+
+/* ─── Section filtre ─── */
+.filter-section {
+    background: var(--bg-card2);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ─── Badges ─── */
+.badge {
+    display: inline-block;
+    padding: .18rem .7rem;
+    border-radius: 0;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: .7rem;
+    letter-spacing: .1em;
+    font-weight: 600;
+    border: 1px solid;
+}
+.badge-success { background: rgba(0,230,130,0.1);  color: var(--accent);  border-color: var(--border2); }
+.badge-warning { background: rgba(255,204,0,0.1);  color: var(--warn);    border-color: rgba(255,204,0,0.3); }
+.badge-danger  { background: rgba(255,61,90,0.1);  color: var(--danger);  border-color: rgba(255,61,90,0.3); }
+
+/* ─── DataFrames ─── */
+.dataframe { font-size: .82rem !important; }
+.stDataFrame { border: 1px solid var(--border) !important; }
+
+/* ─── Tabs ─── */
+.stTabs [data-baseweb="tab-list"] {
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border2);
+    gap: 0;
+}
+.stTabs [data-baseweb="tab"] {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: .92rem !important;
+    font-weight: 600 !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase;
+    color: var(--text-muted) !important;
+    padding: .6rem 1.2rem !important;
+    border-bottom: 2px solid transparent !important;
+    background: transparent !important;
+}
+.stTabs [aria-selected="true"] {
+    color: var(--accent) !important;
+    border-bottom-color: var(--accent) !important;
+    background: rgba(0,230,130,0.06) !important;
+}
+
+/* ─── Boutons Streamlit ─── */
+.stButton > button {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: .9rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .1em !important;
+    text-transform: uppercase;
+    background: rgba(0,230,130,0.08) !important;
+    color: var(--accent) !important;
+    border: 1px solid var(--border2) !important;
+    border-radius: 0 !important;
+    transition: all .2s !important;
+}
+.stButton > button:hover {
+    background: rgba(0,230,130,0.18) !important;
+    box-shadow: var(--glow) !important;
+    border-color: var(--accent) !important;
+}
+
+/* ─── Inputs / Selects ─── */
+.stSelectbox > div > div,
+.stMultiSelect > div > div,
+.stTextInput > div > div {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border2) !important;
+    border-radius: 0 !important;
+    color: var(--text) !important;
+}
+
+/* ─── Sidebar ─── */
+section[data-testid="stSidebar"] .stMarkdown h1,
+section[data-testid="stSidebar"] .stMarkdown h2,
+section[data-testid="stSidebar"] .stMarkdown h3 {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    color: var(--accent) !important;
+    font-size: 1rem !important;
+    letter-spacing: .12em !important;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: .4rem;
+    margin-top: 1.2rem !important;
+}
+
+/* ─── Metric cards Streamlit ─── */
+[data-testid="stMetric"] {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: .9rem 1rem;
+}
+[data-testid="stMetricLabel"] > div {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: .68rem !important;
+    color: var(--text-muted) !important;
+    letter-spacing: .15em !important;
+    text-transform: uppercase;
+}
+[data-testid="stMetricValue"] > div {
+    font-family: 'Barlow Condensed', sans-serif !important;
+    font-size: 2.2rem !important;
+    font-weight: 700 !important;
+    color: var(--accent) !important;
+}
+
+/* ─── Progress bar ─── */
+.stProgress > div > div { background: var(--accent) !important; }
+.stProgress > div { background: var(--bg-card2) !important; }
+
+/* ─── Spinner / info / success / warning ─── */
+.stAlert {
+    background: var(--bg-card) !important;
+    border-radius: 0 !important;
+    border: 1px solid var(--border) !important;
+}
+
+/* ─── Titres de sections internes ─── */
+.section-title {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-left: 3px solid var(--accent);
+    padding-left: .75rem;
+    margin: 1.5rem 0 1rem;
+}
+.section-title span { color: var(--accent); }
+
+/* ─── Séparateur stylisé ─── */
+hr {
+    border: none !important;
+    height: 1px !important;
+    background: linear-gradient(90deg, transparent, var(--border2), transparent) !important;
+    margin: 1.5rem 0 !important;
+}
+
+/* ─── Animation pulse pour valeurs critiques ─── */
+@keyframes pulse-danger {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+.pulse { animation: pulse-danger 1.8s ease-in-out infinite; }
+
+/* ─── Carte de stat horizontale ─── */
+.stat-row {
+    display: flex; align-items: center; gap: 1rem;
+    background: var(--bg-card2);
+    border: 1px solid var(--border);
+    padding: .7rem 1rem;
+    margin-bottom: .4rem;
+}
+.stat-row:hover { border-color: var(--border2); }
+.stat-bar {
+    flex: 1; height: 4px;
+    background: var(--bg-panel);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.stat-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+.stat-fill.warn   { background: var(--warn); }
+.stat-fill.danger { background: var(--danger); }
 </style>
 """
 
@@ -301,12 +574,12 @@ class VisualizationEngine:
     """Classe pour créer des visualisations avancées"""
     
     COLOR_PALETTE = {
-        'primary': '#667eea',
-        'secondary': '#764ba2',
-        'success': '#10b981',
-        'warning': '#f59e0b',
-        'danger': '#ef4444',
-        'info': '#3b82f6'
+        'primary': '#00e682',
+        'secondary': '#00b8ff',
+        'success': '#00e682',
+        'warning': '#ffcc00',
+        'danger': '#ff3d5a',
+        'info': '#00b8ff'
     }
     
     @classmethod
@@ -330,7 +603,7 @@ class VisualizationEngine:
             gauge={
                 'axis': {'range': [None, max_value], 'tickwidth': 1},
                 'bar': {'color': color},
-                'bgcolor': "white",
+                'bgcolor': "rgba(14,24,32,0.95)",
                 'borderwidth': 2,
                 'bordercolor': "gray",
                 'steps': [
@@ -349,8 +622,9 @@ class VisualizationEngine:
         fig.update_layout(
             height=250,
             margin=dict(l=20, r=20, t=50, b=20),
-            paper_bgcolor="white",
-            font={'color': "#333", 'family': "Arial"}
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(14,24,32,0.9)",
+            font={'color': "#8fa8c4", 'family': "Barlow Condensed, sans-serif"}
         )
         
         return fig
@@ -396,7 +670,7 @@ class VisualizationEngine:
                 xanchor="center",
                 x=0.5
             ),
-            template="plotly_white",
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(14,24,32,0.9)",
             hovermode='x unified'
         )
         
@@ -433,7 +707,7 @@ class VisualizationEngine:
             xaxis=dict(title="Pourcentage (%)", range=[0, 105]),
             yaxis=dict(title=""),
             height=max(400, len(df) * 40),
-            template="plotly_white",
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(14,24,32,0.9)",
             showlegend=False
         )
         
@@ -469,7 +743,7 @@ class VisualizationEngine:
             xaxis_title="",
             yaxis_title="Pourcentage (%)",
             height=450,
-            template="plotly_white",
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(14,24,32,0.9)",
             hovermode='x unified',
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
         )
@@ -498,7 +772,7 @@ class VisualizationEngine:
         fig.update_layout(
             title={'text': f'<b>{title}</b>', 'x': 0.5, 'xanchor': 'center'},
             height=max(400, len(pivot_df) * 30),
-            template="plotly_white"
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(14,24,32,0.9)"
         )
         
         return fig
@@ -519,7 +793,7 @@ class VisualizationEngine:
         
         fig.update_layout(
             height=600,
-            template="plotly_white"
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(14,24,32,0.9)"
         )
         
         return fig
@@ -969,89 +1243,127 @@ def generate_analysis_tables(data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
 ################################################################################
 
 def render_header():
-    """Affiche l'en-tête principal"""
-    st.markdown("""
+    """Affiche l'en-tête principal — Mission Control Edition"""
+    now = datetime.now().strftime("%d %b %Y · %H:%M")
+    st.markdown(f"""
         <div class="main-header">
-            <h1>🦟 MILDA Dashboard</h1>
-            <p style="font-size: 1.2rem; margin-top: 0.5rem;">
-                Système de monitorage et d'analyse de la distribution des moustiquaires au Tchad 2026
-            </p>
+            <div class="header-badge">🟢 SYSTÈME ACTIF · {now} UTC+1</div>
+            <h1>🦟 MILDA MONITOR</h1>
+            <div class="header-sub">
+                Programme National de Distribution de Moustiquaires · République du Tchad · CDM 2026
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
 
 def render_kpi_cards(metrics: Dict):
-    """Affiche les cartes KPI principales"""
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Ménages Servis</p>
-                <p class="kpi-value">{metrics.get('pct_servis', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_servis', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_servis', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
+    """Affiche les cartes KPI — Mission Control Edition"""
+
+    def _cls(val, seuil=80):
+        if val >= seuil: return ""
+        if val >= seuil * 0.85: return "warn"
+        return "alert"
+
+    def _trend(val, seuil=80):
+        if val >= seuil:
+            return f'<span class="kpi-trend trend-up">▲ OBJECTIF ATTEINT</span>'
+        if val >= seuil * 0.85:
+            return f'<span class="kpi-trend trend-neutral">◆ PROCHE DE L\'OBJECTIF</span>'
+        return f'<span class="kpi-trend trend-down pulse">▼ SOUS OBJECTIF</span>'
+
+    kpis = [
+        ("01", "Ménages Servis",        "pct_servis",   "🏠", 80),
+        ("02", "Distribution Correcte", "pct_correct",  "✅", 80),
+        ("03", "Ménages Marqués",       "pct_marques",  "🖊", 80),
+        ("04", "Ménages Informés",      "pct_informes", "📢", 60),
+    ]
+
+    cols = st.columns(4)
+    for col, (num, label, key, icon, seuil) in zip(cols, kpis):
+        val = metrics.get(key, 0)
+        cls = _cls(val, seuil)
+        with col:
+            st.markdown(f"""
+                <div class="kpi-card {cls}">
+                    <span class="kpi-corner">{icon}</span>
+                    <p class="kpi-label">KPI·{num} · {label}</p>
+                    <p class="kpi-value">{val:.1f}<span style="font-size:1.4rem;opacity:.6">%</span></p>
+                    {_trend(val, seuil)}
+                </div>
+            """, unsafe_allow_html=True)
+
+    # Barre de progression globale
+    total = metrics.get('total_menages', 0)
+    servis = metrics.get('menages_servis', 0)
+    pct = metrics.get('pct_servis', 0)
+    st.markdown(f"""
+        <div style="background:var(--bg-card2);border:1px solid var(--border);
+                    padding:.9rem 1.4rem;margin:.3rem 0 .8rem;display:flex;
+                    align-items:center;gap:1.5rem;">
+            <div style="font-family:'Share Tech Mono',monospace;font-size:.68rem;
+                        color:var(--text-muted);letter-spacing:.15em;white-space:nowrap;">
+                TOTAL MÉNAGES ENQUÊTÉS
             </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Distribution Correcte</p>
-                <p class="kpi-value">{metrics.get('pct_correct', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_correct', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_correct', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;
+                        font-weight:700;color:var(--text);white-space:nowrap;">
+                {total:,}
             </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Ménages Marqués</p>
-                <p class="kpi-value">{metrics.get('pct_marques', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_marques', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_marques', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
+            <div style="flex:1;height:6px;background:var(--bg-panel);border-radius:3px;overflow:hidden;">
+                <div style="width:{pct}%;height:100%;
+                            background:linear-gradient(90deg,var(--accent),var(--accent2));
+                            border-radius:3px;transition:width 1s ease;"></div>
             </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Ménages Informés</p>
-                <p class="kpi-value">{metrics.get('pct_informes', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_informes', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_informes', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
+            <div style="font-family:'Share Tech Mono',monospace;font-size:.75rem;
+                        color:var(--accent);white-space:nowrap;">
+                {servis:,} SERVIS · {pct:.1f}%
             </div>
-        """, unsafe_allow_html=True)
+        </div>
+    """, unsafe_allow_html=True)
 
 
 def render_alerts(metrics: Dict):
-    """Affiche les alertes basées sur les seuils"""
-    
-    alerts = []
-    
-    if metrics.get('pct_servis', 0) < 70:
-        alerts.append(('danger', f"Taux de ménages servis critique: {metrics['pct_servis']:.1f}% (objectif: 80%)"))
-    elif metrics.get('pct_servis', 0) < 80:
-        alerts.append(('warning', f"Taux de ménages servis sous l'objectif: {metrics['pct_servis']:.1f}% (objectif: 80%)"))
-    else:
-        alerts.append(('success', f"Excellent taux de ménages servis: {metrics['pct_servis']:.1f}%"))
-    
-    if metrics.get('pct_correct', 0) < 70:
-        alerts.append(('danger', f"Précision de distribution critique: {metrics['pct_correct']:.1f}%"))
-    
-    if metrics.get('pct_informes', 0) < 60:
-        alerts.append(('warning', "Sensibilisation insuffisante sur l'utilisation des MILDA"))
-    
-    for alert_type, message in alerts:
+    """Affiche les alertes — Mission Control Edition"""
+
+    checks = [
+        ("pct_servis",   80, 70, "Couverture ménages servis",
+         "Taux conforme à l'objectif national 80%",
+         "Taux légèrement sous l'objectif (80%)",
+         "ALERTE : Taux critique de couverture"),
+        ("pct_correct",  80, 70, "Distribution conforme (norme)",
+         "Distribution respecte la clé de répartition",
+         "Écarts de distribution détectés",
+         "ALERTE : Non-conformité distribution critique"),
+        ("pct_marques",  80, 65, "Ménages marqués",
+         "Marquage des ménages satisfaisant",
+         "Taux de marquage insuffisant",
+         "ALERTE : Marquage très insuffisant"),
+        ("pct_informes", 60, 45, "Sensibilisation MILDA",
+         "Sensibilisation communautaire effective",
+         "Sensibilisation à renforcer",
+         "ALERTE : Déficit de sensibilisation"),
+    ]
+
+    icons = {"success": "●", "warning": "◆", "danger": "▲"}
+
+    for key, seuil_ok, seuil_crit, label, msg_ok, msg_warn, msg_crit in checks:
+        val = metrics.get(key, 0)
+        if val >= seuil_ok:
+            t, msg = "success", msg_ok
+        elif val >= seuil_crit:
+            t, msg = "warning", msg_warn
+        else:
+            t, msg = "danger",  msg_crit
+
         st.markdown(f"""
-            <div class="alert-box alert-{alert_type}">
-                <strong>{'🔴' if alert_type == 'danger' else '⚠️' if alert_type == 'warning' else '✅'}</strong> {message}
+            <div class="alert-box alert-{t}">
+                <span style="font-family:'Share Tech Mono',monospace;font-size:.75rem;
+                             opacity:.7;white-space:nowrap;">{icons[t]} {label}</span>
+                <span style="flex:1;">{msg} &nbsp;
+                    <strong style="font-family:'Barlow Condensed',sans-serif;
+                                   font-size:1rem;">{val:.1f}%</strong>
+                </span>
+                <span style="font-family:'Share Tech Mono',monospace;font-size:.65rem;
+                             opacity:.5;white-space:nowrap;">OBJ: {seuil_ok}%</span>
             </div>
         """, unsafe_allow_html=True)
 
@@ -1059,7 +1371,9 @@ def render_alerts(metrics: Dict):
 def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     """Page principale du dashboard"""
     
-    st.markdown("## 📊 Vue d'ensemble")
+    st.markdown("""
+        <div class="section-title"><span>📊</span> VUE D'ENSEMBLE — INDICATEURS CLÉS</div>
+    """, unsafe_allow_html=True)
     
     # Calcul des métriques
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
@@ -1071,7 +1385,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     st.markdown("---")
     
     # Alertes
-    with st.expander("🔔 Alertes et Notifications", expanded=True):
+    with st.expander("▲ ALERTES ET NOTIFICATIONS", expanded=True):
         render_alerts(metrics)
     
     st.markdown("---")
@@ -1080,7 +1394,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 📈 Indicateurs par Province")
+        st.markdown('<div class="section-title"><span>📈</span> INDICATEURS PAR PROVINCE</div>', unsafe_allow_html=True)
         if 'resume_province' in tables and len(tables['resume_province']) > 0:
             fig = VisualizationEngine.create_comparison_chart(
                 tables['resume_province'],
@@ -1091,7 +1405,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
             st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        st.markdown("### 🎯 Score de qualité global")
+        st.markdown('<div class="section-title"><span>🎯</span> SCORE QUALITÉ GLOBAL</div>', unsafe_allow_html=True)
         fig = VisualizationEngine.create_kpi_gauge(
             quality_score,
             "Score de qualité",
@@ -2265,7 +2579,7 @@ def generate_automatic_report(data: pd.DataFrame, tables: dict) -> io.BytesIO:
             for value, count in chef_data.items():
                 freq = round(count / total * 100, 2)
                 table_data.append([value, count, freq])
-            table_data.append(['Total', count, 100.00])
+            table_data.append(['Total', total, 100.00])
             
             create_table(doc, table_data, ['Êtes-vous le Chef de ce ménage ?', 'Effectif', 'Fréquence'])
             doc.add_paragraph('Source : Données issues du re-dénombrement 5% de la CDM-2026').italic = True
@@ -2901,8 +3215,16 @@ def main():
     
     # --- 1. CONFIGURATION SIDEBAR ---
     with st.sidebar:
-        st.header("🔑 Connexion KoBo")
-        server_base = st.selectbox("Serveur", 
+        st.markdown("""
+        <div style="text-align:center;padding:1rem 0 .5rem;border-bottom:1px solid rgba(0,230,130,0.15);margin-bottom:1rem;">
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:900;
+                        color:#00e682;letter-spacing:.15em;text-transform:uppercase;">MILDA</div>
+            <div style="font-family:'Share Tech Mono',monospace;font-size:.62rem;color:#3d5870;
+                        letter-spacing:.2em;text-transform:uppercase;margin-top:.2rem;">MONITOR · CDM 2026</div>
+        </div>
+    """, unsafe_allow_html=True)
+        st.header("🔑 CONNEXION KOBO")
+        server_base = st.selectbox("Serveur",
                                   ["https://kf.kobotoolbox.org", "https://kobo.humanitarianresponse.info"])
         
         username = st.text_input("Nom d'utilisateur")
@@ -2910,7 +3232,7 @@ def main():
         connect_button = st.button("Se connecter au compte")
         
         st.divider()
-        st.header("📂 Ou Import Excel")
+        st.header("📂 IMPORT EXCEL")
         uploaded_file = st.file_uploader("Choisir un fichier Excel", type=['xlsx', 'xls'])
 
     # Initialisation des variables de session
