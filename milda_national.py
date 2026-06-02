@@ -710,7 +710,7 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
             'norme': ['verif_cle', 'gr_1/verif_cle', 'verif_cle'],
             'menage_marque': ['menage_marque', 'Est-ce que le ménage a  été marqué comme un ménage ayant reçu de MILDA?', 'gr_1/S1Q22', 'S1Q22'],
             'sensibilise': ['sensibilise', 'Avez-vous été sensibilisé sur l’utilisation correcte du MILDA par les relais communautaires ?', 'gr_1/S1Q23', 'S1Q23'],
-            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation'],
+            'latitude': ['latitude', '_LES COORDONNEES GEOGRAPHIQUES_latitude', '_geolocation', 'geo_location', 'geolocation', 'latitude', 'longitude'],
             'longitude': ['longitude', '_LES COORDONNEES GEOGRAPHIQUES_longitude'],
             'respondant_col' : ['S1Q18', 'Le répondant est-il le même que lors de la distribution ?'],
             'id_scan' : ['scan_milda', 'Scannage code QR MILDA', '${agent_name}, Avez pas pu scanner un nombre codes QR corresondant aux MILDA reçu dans le ménage?', 'rsn2'],
