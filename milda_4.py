@@ -52,111 +52,597 @@ except ImportError:
 
 # Configuration de la page
 st.set_page_config(
-    page_title="MILDA Dashboard",
+    page_title="🦟 MILDA Monitor · CDM Tchad 2026",
     page_icon="🦟",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
         'Get Help': 'https://www.example.com/help',
         'Report a bug': "https://www.example.com/bug",
-        'About': "# MILDA Dashboard v1.0\nTableau de bord pour le monitorage de la distribution des moustiquaires au Tchad "
+        'About': "# 🦟 MILDA Monitor v2.0\nTableau de bord de monitorage externe — Campagne de Distribution de Masse · Tchad 2026"
     }
 )
 
-# Thème et styles personnalisés
+# ── Thème & styles personnalisés — Aurora Edition ──────────────────────────
 CUSTOM_CSS = """
 <style>
-    /* En-tête principal */
-    .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    
-    /* Cartes KPI */
-    .kpi-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        border-left: 4px solid #667eea;
-        margin-bottom: 1rem;
-    }
-    
-    .kpi-value {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #667eea;
-        margin: 0;
-    }
-    
-    .kpi-label {
-        font-size: 0.9rem;
-        color: #666;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    .kpi-trend {
-        font-size: 0.8rem;
-        margin-top: 0.5rem;
-    }
-    
-    .trend-up { color: #10b981; }
-    .trend-down { color: #ef4444; }
-    .trend-neutral { color: #6b7280; }
-    
-    /* Alertes */
-    .alert-box {
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-    }
-    
-    .alert-success { background-color: #d1fae5; border-left: 4px solid #10b981; }
-    .alert-warning { background-color: #fef3c7; border-left: 4px solid #f59e0b; }
-    .alert-danger { background-color: #fee2e2; border-left: 4px solid #ef4444; }
-    .alert-info { background-color: #dbeafe; border-left: 4px solid #3b82f6; }
-    
-    /* Filtres */
-    .filter-section {
-        background: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin-bottom: 1.5rem;
-    }
-    
-    /* Tables améliorées */
-    .dataframe {
-        font-size: 0.9rem !important;
-    }
-    
-    /* Badges */
-    .badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 600;
-    }
-    
-    .badge-success { background-color: #d1fae5; color: #065f46; }
-    .badge-warning { background-color: #fef3c7; color: #92400e; }
-    .badge-danger { background-color: #fee2e2; color: #991b1b; }
-    
-    /* Animation de chargement */
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
-    
-    .loading-pulse {
-        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800;900&family=Nunito+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ─── Variables globales ─── */
+:root {
+    /* ── Surfaces ── */
+    --bg:        #F5F7FF;
+    --surface:   #FFFFFF;
+    --surface2:  #F0F3FF;
+    --border:    #DDE3F8;
+    --border2:   #C0CCEF;
+
+    /* ── Palette principale ── */
+    --primary:   #4361EE;   /* Indigo royal  */
+    --primary-lt:#7B96F5;
+    --primary-bg:#EEF1FD;
+
+    --success:   #2EC4B6;   /* Teal émeraude */
+    --success-lt:#6DDDD5;
+    --success-bg:#E8FAF8;
+
+    --warning:   #FF9F1C;   /* Amber soleil  */
+    --warning-lt:#FFBF69;
+    --warning-bg:#FFF4E3;
+
+    --danger:    #E63946;   /* Corail rouge  */
+    --danger-lt: #F07179;
+    --danger-bg: #FDECEE;
+
+    --info:      #4CC9F0;   /* Cyan ciel     */
+    --info-lt:   #85DCFA;
+    --info-bg:   #EAF8FE;
+
+    --violet:    #7B2D8B;   /* Violet mauve  */
+    --violet-bg: #F3E8F6;
+
+    /* ── Texte ── */
+    --text:      #1A2340;
+    --text-2:    #3D4F6E;
+    --text-3:    #8896B3;
+
+    /* ── Ombres (teintées primary) ── */
+    --shadow-sm: 0 1px 4px rgba(67,97,238,.09), 0 1px 2px rgba(0,0,0,.04);
+    --shadow:    0 4px 20px rgba(67,97,238,.12), 0 1px 4px rgba(0,0,0,.04);
+    --shadow-lg: 0 8px 36px rgba(67,97,238,.16), 0 2px 8px rgba(0,0,0,.05);
+
+    --radius:    14px;
+    --radius-sm: 9px;
+}
+
+/* ─── Reset Streamlit ─── */
+.stApp { background: var(--bg) !important; }
+
+section[data-testid="stSidebar"] > div:first-child {
+    background: linear-gradient(180deg, #10174A 0%, #1B2B7A 45%, #10174A 100%) !important;
+    border-right: 1px solid rgba(67,97,238,.22) !important;
+}
+
+.block-container { padding-top: .5rem !important; max-width: 1400px; }
+
+h1,h2,h3,h4,h5 {
+    font-family: 'Nunito', sans-serif !important;
+    color: var(--text) !important;
+    font-weight: 800 !important;
+}
+p, div, span, label, li {
+    font-family: 'Nunito Sans', sans-serif !important;
+    color: var(--text-2);
+}
+code, pre, .mono {
+    font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--indigo-lt); }
+
+/* ══════════════════════════════════════════
+   EN-TÊTE PRINCIPAL
+══════════════════════════════════════════ */
+.main-header {
+    position: relative;
+    background: linear-gradient(135deg, #1B2B7A 0%, #4361EE 40%, #7B2D8B 72%, #2EC4B6 100%);
+    border-radius: var(--radius);
+    padding: 2.4rem 3rem 2rem;
+    color: #fff;
+    text-align: center;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+}
+.main-header::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Ccircle cx='30' cy='30' r='20'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") repeat;
+    pointer-events: none;
+}
+.main-header::after {
+    content: '';
+    position: absolute; bottom: 0; left: 10%; right: 10%; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
+    border-radius: 99px;
+}
+.main-header h1 {
+    font-family: 'Nunito', sans-serif !important;
+    font-size: 2.4rem !important;
+    font-weight: 900 !important;
+    color: #fff !important;
+    letter-spacing: -.02em !important;
+    margin: 0 !important;
+    text-shadow: 0 2px 20px rgba(0,0,0,.25);
+}
+.header-sub {
+    font-family: 'Nunito Sans', sans-serif;
+    font-size: .92rem;
+    color: rgba(255,255,255,.82);
+    margin-top: .5rem;
+    letter-spacing: .01em;
+}
+.header-chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    background: rgba(255,255,255,.15);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 99px;
+    padding: .28rem .9rem;
+    font-size: .72rem;
+    font-weight: 700;
+    color: #fff;
+    margin-top: .9rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+.header-chip .dot {
+    width: 7px; height: 7px;
+    border-radius: 99px;
+    background: #4ade80;
+    box-shadow: 0 0 6px #4ade80;
+    animation: blink 1.6s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+/* ══════════════════════════════════════════
+   CARTES KPI — Aurora Cards
+══════════════════════════════════════════ */
+.kpi-card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.6rem 1.3rem;
+    margin-bottom: .8rem;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    transition: box-shadow .2s, transform .2s;
+}
+.kpi-card:hover {
+    box-shadow: var(--shadow);
+    transform: translateY(-2px);
+}
+/* Barre couleur en haut */
+.kpi-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 4px;
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+/* Blob décoratif en arrière-plan */
+.kpi-card::after {
+    content: '';
+    position: absolute; top: -20px; right: -20px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    opacity: .07;
+}
+
+/* Variantes par statut */
+.kpi-success::before { background: linear-gradient(90deg, #2EC4B6, #6DDDD5); }
+.kpi-success::after  { background: #2EC4B6; }
+.kpi-success .kpi-value { color: #2EC4B6 !important; }
+.kpi-success .kpi-icon-bg { background: var(--success-bg); color: #2EC4B6; }
+
+.kpi-warn::before { background: linear-gradient(90deg, #FF9F1C, #FFBF69); }
+.kpi-warn::after  { background: #FF9F1C; }
+.kpi-warn .kpi-value { color: #FF9F1C !important; }
+.kpi-warn .kpi-icon-bg { background: var(--warning-bg); color: #FF9F1C; }
+
+.kpi-danger::before { background: linear-gradient(90deg, #E63946, #F07179); }
+.kpi-danger::after  { background: #E63946; }
+.kpi-danger .kpi-value { color: #E63946 !important; }
+.kpi-danger .kpi-icon-bg { background: var(--danger-bg); color: #E63946; }
+
+.kpi-info::before { background: linear-gradient(90deg, #4361EE, #7B96F5); }
+.kpi-info::after  { background: #4361EE; }
+.kpi-info .kpi-value { color: #4361EE !important; }
+.kpi-info .kpi-icon-bg { background: var(--primary-bg); color: #4361EE; }
+
+.kpi-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: .8rem;
+}
+.kpi-icon-bg {
+    width: 42px; height: 42px;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+.kpi-label {
+    font-family: 'Nunito Sans', sans-serif !important;
+    font-size: .72rem !important;
+    font-weight: 700 !important;
+    color: var(--text-3) !important;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin: 0 !important;
+}
+.kpi-value {
+    font-family: 'Nunito', sans-serif !important;
+    font-size: 2.8rem !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    margin: .25rem 0 .4rem !important;
+    letter-spacing: -.03em;
+}
+.kpi-trend {
+    font-family: 'Nunito Sans', sans-serif !important;
+    font-size: .78rem !important;
+    font-weight: 600 !important;
+    display: flex; align-items: center; gap: .3rem;
+    margin: 0 !important;
+}
+.trend-up      { color: #2EC4B6 !important; }
+.trend-down    { color: #E63946 !important; }
+.trend-neutral { color: #FF9F1C !important; }
+
+/* Mini progress bar sous la valeur */
+.kpi-bar {
+    height: 3px; border-radius: 99px;
+    background: var(--border); margin-top: .8rem; overflow: hidden;
+}
+.kpi-bar-fill {
+    height: 100%; border-radius: 99px;
+    transition: width .8s cubic-bezier(.4,0,.2,1);
+}
+
+/* ══════════════════════════════════════════
+   BARRE DE PROGRESSION TOTALE
+══════════════════════════════════════════ */
+.progress-band {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.6rem;
+    display: flex; align-items: center; gap: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 1rem;
+}
+.pb-label {
+    font-family: 'Nunito', sans-serif;
+    font-size: .7rem;
+    font-weight: 800;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    white-space: nowrap;
+}
+.pb-value {
+    font-family: 'Nunito', sans-serif;
+    font-size: 1.7rem;
+    font-weight: 900;
+    color: var(--text);
+    white-space: nowrap;
+}
+.pb-track {
+    flex: 1; height: 8px;
+    background: var(--border);
+    border-radius: 99px; overflow: hidden;
+}
+.pb-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4361EE, #7B2D8B, #2EC4B6);
+    border-radius: 99px;
+}
+.pb-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .85rem;
+    font-weight: 600;
+    color: #4361EE;
+    white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════
+   ALERTES
+══════════════════════════════════════════ */
+.alert-box {
+    display: flex; align-items: flex-start; gap: .8rem;
+    padding: .85rem 1.1rem;
+    border-radius: var(--radius-sm);
+    margin: .45rem 0;
+    border: 1px solid;
+}
+.alert-icon {
+    font-size: 1.1rem; flex-shrink: 0; margin-top: .05rem;
+}
+.alert-body { flex: 1; }
+.alert-title {
+    font-family: 'Nunito', sans-serif;
+    font-size: .82rem; font-weight: 800;
+    margin-bottom: .15rem;
+}
+.alert-msg {
+    font-family: 'Nunito Sans', sans-serif;
+    font-size: .78rem; font-weight: 400;
+}
+.alert-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .9rem; font-weight: 700;
+    white-space: nowrap; align-self: center;
+}
+
+.alert-success {
+    background: var(--success-bg);
+    border-color: rgba(46,196,182,.25);
+}
+.alert-success .alert-title { color: #0D7A74; }
+.alert-success .alert-msg   { color: #1A9E97; }
+.alert-success .alert-val   { color: #2EC4B6; }
+
+.alert-warning {
+    background: var(--warning-bg);
+    border-color: rgba(255,159,28,.25);
+}
+.alert-warning .alert-title { color: #A05A00; }
+.alert-warning .alert-msg   { color: #C47000; }
+.alert-warning .alert-val   { color: #FF9F1C; }
+
+.alert-danger {
+    background: var(--danger-bg);
+    border-color: rgba(230,57,70,.25);
+}
+.alert-danger .alert-title { color: #8B1520; }
+.alert-danger .alert-msg   { color: #B31C2A; }
+.alert-danger .alert-val   { color: #E63946; }
+
+.alert-info {
+    background: var(--primary-bg);
+    border-color: rgba(67,97,238,.25);
+}
+.alert-info .alert-title { color: #1A2FA8; }
+.alert-info .alert-msg   { color: #3050C5; }
+.alert-info .alert-val   { color: #4361EE; }
+
+/* ══════════════════════════════════════════
+   SECTION TITLES
+══════════════════════════════════════════ */
+.section-title {
+    display: flex; align-items: center; gap: .6rem;
+    font-family: 'Nunito', sans-serif;
+    font-size: 1.05rem; font-weight: 800;
+    color: var(--text);
+    margin: 1.6rem 0 1rem;
+}
+.section-title .pill {
+    background: linear-gradient(135deg, #4361EE, #7B2D8B);
+    color: #fff;
+    border-radius: 99px;
+    padding: .2rem .7rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+
+/* ══════════════════════════════════════════
+   FILTRE / SURFACE
+══════════════════════════════════════════ */
+.filter-section {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem 1.6rem;
+    margin-bottom: 1.2rem;
+}
+
+/* ══════════════════════════════════════════
+   BADGES
+══════════════════════════════════════════ */
+.badge {
+    display: inline-flex; align-items: center;
+    padding: .22rem .75rem;
+    border-radius: 99px;
+    font-family: 'Nunito', sans-serif;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+}
+.badge-success { background: var(--emerald-bg); color: #065f46; }
+.badge-warning { background: var(--amber-bg);   color: #92400e; }
+.badge-danger  { background: var(--rose-bg);    color: #9f1239; }
+.badge-info    { background: var(--indigo-bg);  color: #3730a3; }
+
+/* ══════════════════════════════════════════
+   ONGLETS
+══════════════════════════════════════════ */
+.stTabs [data-baseweb="tab-list"] {
+    background: var(--surface);
+    border-bottom: 2px solid var(--border);
+    gap: 0;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 0 .5rem;
+}
+.stTabs [data-baseweb="tab"] {
+    font-family: 'Nunito', sans-serif !important;
+    font-size: .85rem !important;
+    font-weight: 700 !important;
+    color: var(--text-3) !important;
+    padding: .7rem 1.1rem !important;
+    border-bottom: 3px solid transparent !important;
+    background: transparent !important;
+    transition: all .15s !important;
+}
+.stTabs [aria-selected="true"] {
+    color: #4361EE !important;
+    border-bottom-color: #4361EE !important;
+    background: var(--primary-bg) !important;
+}
+
+/* ══════════════════════════════════════════
+   BOUTONS
+══════════════════════════════════════════ */
+.stButton > button {
+    font-family: 'Nunito', sans-serif !important;
+    font-weight: 700 !important;
+    border-radius: var(--radius-sm) !important;
+    transition: all .2s !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #4361EE, #7B2D8B) !important;
+    border: none !important;
+    color: #fff !important;
+    box-shadow: 0 4px 14px rgba(67,97,238,.35) !important;
+}
+.stButton > button[kind="primary"]:hover {
+    box-shadow: 0 6px 20px rgba(67,97,238,.45) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ══════════════════════════════════════════
+   MÉTRIQUES STREAMLIT (st.metric)
+══════════════════════════════════════════ */
+[data-testid="stMetric"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.2rem;
+    box-shadow: var(--shadow-sm);
+}
+[data-testid="stMetricLabel"] > div {
+    font-family: 'Nunito Sans', sans-serif !important;
+    font-size: .72rem !important;
+    font-weight: 700 !important;
+    color: var(--text-3) !important;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+[data-testid="stMetricValue"] > div {
+    font-family: 'Nunito', sans-serif !important;
+    font-size: 2rem !important;
+    font-weight: 900 !important;
+    color: #4361EE !important;
+}
+
+/* ══════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════ */
+section[data-testid="stSidebar"] .stMarkdown h1,
+section[data-testid="stSidebar"] .stMarkdown h2,
+section[data-testid="stSidebar"] .stMarkdown h3 {
+    font-family: 'Nunito', sans-serif !important;
+    color: #a5b4fc !important;
+    font-size: .8rem !important;
+    letter-spacing: .1em !important;
+    text-transform: uppercase;
+    font-weight: 800 !important;
+    padding-bottom: .4rem;
+    border-bottom: 1px solid rgba(165,180,252,.15);
+    margin-top: 1.2rem !important;
+}
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] p {
+    color: #B8C9F5 !important;
+    font-family: 'Nunito Sans', sans-serif !important;
+    font-size: .84rem !important;
+}
+section[data-testid="stSidebar"] .stButton > button {
+    background: rgba(67,97,238,.15) !important;
+    border: 1px solid rgba(67,97,238,.3) !important;
+    color: #7B96F5 !important;
+    font-family: 'Nunito', sans-serif !important;
+    font-weight: 700 !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(67,97,238,.28) !important;
+    border-color: #7B96F5 !important;
+}
+
+/* ══════════════════════════════════════════
+   INPUTS / SELECTS
+══════════════════════════════════════════ */
+.stSelectbox > div > div,
+.stMultiSelect > div > div,
+.stTextInput > div > div {
+    border-radius: var(--radius-sm) !important;
+    border-color: var(--border2) !important;
+    font-family: 'Nunito Sans', sans-serif !important;
+}
+
+/* ══════════════════════════════════════════
+   DATAFRAMES
+══════════════════════════════════════════ */
+.dataframe { font-size: .83rem !important; font-family: 'Nunito Sans', sans-serif !important; }
+.stDataFrame { border-radius: var(--radius) !important; overflow: hidden; }
+
+/* ══════════════════════════════════════════
+   PROGRESS BAR STREAMLIT
+══════════════════════════════════════════ */
+.stProgress > div > div {
+    background: linear-gradient(90deg, #4f46e5, #7c3aed) !important;
+    border-radius: 99px !important;
+}
+
+/* ══════════════════════════════════════════
+   HR
+══════════════════════════════════════════ */
+hr {
+    border: none !important;
+    height: 1px !important;
+    background: var(--border) !important;
+    margin: 1.5rem 0 !important;
+}
+
+/* ══════════════════════════════════════════
+   ÉCRAN D'ACCUEIL
+══════════════════════════════════════════ */
+.welcome-box {
+    background: linear-gradient(135deg, var(--primary-bg) 0%, #F0EAFD 100%);
+    border: 1px solid rgba(67,97,238,.2);
+    border-left: 5px solid #4361EE;
+    border-radius: var(--radius);
+    padding: 2rem 2.4rem;
+    margin: 2rem 0;
+}
+.welcome-box h3 {
+    font-family: 'Nunito', sans-serif !important;
+    color: #1A2FA8 !important;
+    font-size: 1.2rem !important;
+    margin-bottom: .7rem !important;
+}
+.welcome-box p { color: #3050C5 !important; font-size: .9rem !important; }
+
+/* ══════════════════════════════════════════
+   STAT ROW (barres horizontales)
+══════════════════════════════════════════ */
+.stat-row {
+    display: flex; align-items: center; gap: .9rem;
+    padding: .6rem 0;
+    border-bottom: 1px solid var(--border);
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-lbl { font-size: .82rem; color: var(--text-2); width: 140px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.stat-bar { flex: 1; height: 7px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.stat-fill { height: 100%; border-radius: 99px; }
+.fill-ok     { background: linear-gradient(90deg, #2EC4B6, #6DDDD5); }
+.fill-warn   { background: linear-gradient(90deg, #FF9F1C, #FFBF69); }
+.fill-danger { background: linear-gradient(90deg, #E63946, #F07179); }
+.stat-pct { font-family: 'JetBrains Mono', monospace; font-size: .75rem; color: var(--text-2); width: 45px; text-align: right; font-weight: 600; }
 </style>
 """
 
@@ -300,14 +786,19 @@ class MetricsCalculator:
 class VisualizationEngine:
     """Classe pour créer des visualisations avancées"""
     
+    # ── Palette unifiée — cohérente avec le CSS ──────────────
     COLOR_PALETTE = {
-        'primary': '#667eea',
-        'secondary': '#764ba2',
-        'success': '#10b981',
-        'warning': '#f59e0b',
-        'danger': '#ef4444',
-        'info': '#3b82f6'
+        'primary':   '#4361EE',   # Indigo royal
+        'secondary': '#7B2D8B',   # Violet mauve
+        'success':   '#2EC4B6',   # Teal émeraude
+        'warning':   '#FF9F1C',   # Amber soleil
+        'danger':    '#E63946',   # Corail rouge
+        'info':      '#4CC9F0',   # Cyan ciel
+        'violet':    '#7B2D8B',
+        'amber':     '#FF9F1C',
     }
+    # Séquence ordonnée pour graphiques multi-séries
+    COLOR_SEQ = ['#4361EE','#2EC4B6','#FF9F1C','#E63946','#4CC9F0','#7B2D8B','#FFBF69','#6DDDD5']
     
     @classmethod
     def create_kpi_gauge(cls, value: float, title: str, max_value: float = 100,
@@ -349,8 +840,8 @@ class VisualizationEngine:
         fig.update_layout(
             height=250,
             margin=dict(l=20, r=20, t=50, b=20),
-            paper_bgcolor="white",
-            font={'color': "#333", 'family': "Arial"}
+            paper_bgcolor="rgba(245,247,255,0)",
+            font={'color': "#3D4F6E", 'family': "Nunito Sans, sans-serif"}
         )
         
         return fig
@@ -438,7 +929,7 @@ class VisualizationEngine:
         )
         
         # Ajouter une ligne de référence à 80%
-        fig.add_vline(x=80, line_dash="dash", line_color="red", 
+        fig.add_vline(x=80, line_dash="dash", line_color="#E63946", 
                      annotation_text="Objectif 80%", annotation_position="top")
         
         return fig
@@ -802,28 +1293,87 @@ def process_milda_dataframe(data: pd.DataFrame, mappings_dict: Dict = None) -> T
             pass
         return np.nan
 
-    # Cas 1 : colonne _geolocation [lat, lon, alt, acc]
-    if '_geolocation' in data.columns:
-        if 'latitude' not in data.columns or data['latitude'].isna().all():
-            data['latitude']  = data['_geolocation'].apply(lambda x: _parse_coord(x, 0))
-        if 'longitude' not in data.columns or data['longitude'].isna().all():
-            data['longitude'] = data['_geolocation'].apply(lambda x: _parse_coord(x, 1))
+    # ── Mise à jour de _parse_coord : gère aussi le format KoBo
+    # "lat lon alt acc" séparé par des espaces ─────────────────
+    def _parse_coord(val, idx):
+        """Extrait lat (idx=0) ou lon (idx=1) depuis tous les formats KoBo."""
+        try:
+            if isinstance(val, (list, tuple)) and len(val) > idx:
+                return float(val[idx])
+            if isinstance(val, str):
+                s = val.strip()
+                if s in ('', 'nan', 'None', 'NaN'):
+                    return np.nan
+                # Format "[lat, lon, alt, acc]" ou "[lat lon alt acc]"
+                if s.startswith('['):
+                    s = s.replace('[', '').replace(']', '')
+                # Séparateur virgule ou espace
+                if ',' in s:
+                    parts = [p.strip() for p in s.split(',')]
+                else:
+                    parts = s.split()          # "3.876 15.123 0 0"
+                if len(parts) > idx:
+                    return float(parts[idx])
+                # Valeur unique en string (lat seule)
+                return float(s) if idx == 0 else np.nan
+            if isinstance(val, (int, float)) and not np.isnan(float(val)):
+                return float(val) if idx == 0 else np.nan
+        except Exception:
+            pass
+        return np.nan
 
-    # Cas 2 : colonne latitude contenant une liste [lat, lon, ...]
+    # Colonnes candidates GPS triées par priorité
+    GPS_CANDIDATES = [
+        'geo_location',    # ← VOS DONNÉES (trouvé dans le diagnostic)
+        'geolocation',     # ← VOS DONNÉES (alias)
+        '_geolocation',    # KoBo standard avec underscore
+        'gps',
+        'coordonnees',
+        'coordinates',
+    ]
+
+    def _lat_lon_from_col(col_name):
+        """Essaie d'extraire lat/lon depuis une colonne GPS candidate."""
+        if col_name not in data.columns:
+            return False
+        sample = data[col_name].dropna()
+        if sample.empty:
+            return False
+        lat_vals = sample.apply(lambda x: _parse_coord(x, 0))
+        lon_vals = sample.apply(lambda x: _parse_coord(x, 1))
+        if lat_vals.notna().sum() > 0:
+            data['latitude']  = data[col_name].apply(lambda x: _parse_coord(x, 0))
+            data['longitude'] = data[col_name].apply(lambda x: _parse_coord(x, 1))
+            return True
+        return False
+
+    # Cas 1 : colonnes GPS nommées explicitement (toutes variantes)
+    lat_ok = ('latitude' in data.columns and data['latitude'].notna().any())
+    if not lat_ok:
+        for cand in GPS_CANDIDATES:
+            if _lat_lon_from_col(cand):
+                lat_ok = True
+                break
+
+    # Cas 2 : colonne latitude contenant une liste ou string composée
     if 'latitude' in data.columns:
         first_valid = data['latitude'].dropna().iloc[0] if data['latitude'].notna().any() else None
-        if isinstance(first_valid, (list, tuple, str)) and not isinstance(first_valid, float):
+        if isinstance(first_valid, (list, tuple)):
+            coords = data['latitude'].copy()
+            data['latitude']  = coords.apply(lambda x: _parse_coord(x, 0))
+            data['longitude'] = coords.apply(lambda x: _parse_coord(x, 1))
+        elif isinstance(first_valid, str) and (' ' in str(first_valid) or ',' in str(first_valid)):
             coords = data['latitude'].copy()
             data['latitude']  = coords.apply(lambda x: _parse_coord(x, 0))
             data['longitude'] = coords.apply(lambda x: _parse_coord(x, 1))
 
-    # Cas 3 : colonnes avec préfixe (ex: LES_COORDONNEES_GEOGRAPHIQUES_latitude)
-    for c in data.columns:
-        cl = c.lower()
-        if 'latitude' in cl and c != 'latitude' and                 ('latitude' not in data.columns or data['latitude'].isna().all()):
-            data['latitude']  = data[c].apply(lambda x: _parse_coord(x, 0))
-        if 'longitude' in cl and c != 'longitude' and                 ('longitude' not in data.columns or data['longitude'].isna().all()):
-            data['longitude'] = data[c].apply(lambda x: _parse_coord(x, 1))  # idx=1 pour longitude
+    # Cas 3 : scan de toutes les colonnes contenant lat/lon/geo dans leur nom
+    if 'latitude' not in data.columns or data['latitude'].isna().all():
+        for c in data.columns:
+            cl = c.lower().replace('_', '').replace(' ', '')
+            if any(kw in cl for kw in ['geo', 'coord', 'gps', 'location']) and c not in GPS_CANDIDATES:
+                if _lat_lon_from_col(c):
+                    break
         
     
     # Normalisation Oui/Non
@@ -1117,89 +1667,130 @@ def generate_analysis_tables(data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
 ################################################################################
 
 def render_header():
-    """Affiche l'en-tête principal"""
-    st.markdown("""
+    """Affiche l'en-tête principal — Aurora Edition"""
+    from datetime import datetime
+    now = datetime.now().strftime("%d %b %Y · %H:%M")
+    st.markdown(f"""
         <div class="main-header">
-            <h1>🦟 MILDA Dashboard</h1>
-            <p style="font-size: 1.2rem; margin-top: 0.5rem;">
-                Système de monitorage et d'analyse de la distribution des moustiquaires au Tchad 2026
-            </p>
+            <div style="display:flex;align-items:center;justify-content:center;gap:.7rem;margin-bottom:.5rem;">
+                <span style="font-size:2.2rem;">🦟</span>
+                <h1 style="margin:0!important;">MILDA Monitor</h1>
+                <span style="font-size:2.2rem;">🇹🇩</span>
+            </div>
+            <div class="header-sub">
+                Système de Monitorage Externe — Campagne de Distribution de Masse · Tchad 2026
+            </div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:.6rem;flex-wrap:wrap;margin-top:1rem;">
+                <div class="header-chip">
+                    <span class="dot"></span> Système actif · {now}
+                </div>
+                <div class="header-chip">📊 Tableau de bord opérationnel</div>
+                <div class="header-chip">🌍 Couverture nationale</div>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
 
 def render_kpi_cards(metrics: Dict):
-    """Affiche les cartes KPI principales"""
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Ménages Servis</p>
-                <p class="kpi-value">{metrics.get('pct_servis', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_servis', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_servis', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
+    """Affiche les cartes KPI — Aurora Edition"""
+
+    def _card_cls(val, seuil=80):
+        if val >= seuil:      return "kpi-success"
+        if val >= seuil*.85:  return "kpi-warn"
+        return "kpi-danger"
+
+    def _trend_html(val, seuil=80):
+        if val >= seuil:
+            return '<span class="kpi-trend trend-up">✦ Objectif atteint</span>'
+        if val >= seuil*.85:
+            return '<span class="kpi-trend trend-neutral">◆ Proche de l\'objectif</span>'
+        return '<span class="kpi-trend trend-down">▼ Sous objectif</span>'
+
+    kpis = [
+        ("pct_servis",   "Ménages Servis",        "🏠", 80),
+        ("pct_correct",  "Distribution Correcte", "✅", 80),
+        ("pct_marques",  "Ménages Marqués",       "🖊️",  80),
+        ("pct_informes", "Ménages Informés",      "📢", 60),
+    ]
+
+    cols = st.columns(4)
+    for col, (key, label, icon, seuil) in zip(cols, kpis):
+        val  = metrics.get(key, 0)
+        cls  = _card_cls(val, seuil)
+        pct  = min(val, 100)
+        bar_cls = "fill-ok" if val >= seuil else ("fill-warn" if val >= seuil*.85 else "fill-danger")
+        with col:
+            st.markdown(f"""
+                <div class="kpi-card {cls}">
+                    <div class="kpi-header">
+                        <div>
+                            <p class="kpi-label">{label}</p>
+                        </div>
+                        <div class="kpi-icon-bg">{icon}</div>
+                    </div>
+                    <p class="kpi-value">{val:.1f}<span style="font-size:1.3rem;opacity:.5">%</span></p>
+                    {_trend_html(val, seuil)}
+                    <div class="kpi-bar">
+                        <div class="kpi-bar-fill {bar_cls}" style="width:{pct}%;"></div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # Barre synthèse totale
+    total  = metrics.get("total_menages", 0)
+    servis = metrics.get("menages_servis", 0)
+    pct_s  = metrics.get("pct_servis", 0)
+    st.markdown(f"""
+        <div class="progress-band">
+            <div class="pb-label">Total ménages enquêtés</div>
+            <div class="pb-value">{total:,}</div>
+            <div class="pb-track">
+                <div class="pb-fill" style="width:{min(pct_s,100):.1f}%;"></div>
             </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Distribution Correcte</p>
-                <p class="kpi-value">{metrics.get('pct_correct', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_correct', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_correct', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Ménages Marqués</p>
-                <p class="kpi-value">{metrics.get('pct_marques', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_marques', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_marques', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown(f"""
-            <div class="kpi-card">
-                <p class="kpi-label">Ménages Informés</p>
-                <p class="kpi-value">{metrics.get('pct_informes', 0):.1f}%</p>
-                <p class="kpi-trend trend-{'up' if metrics.get('pct_informes', 0) >= 80 else 'down'}">
-                    {'✓ Objectif atteint' if metrics.get('pct_informes', 0) >= 80 else '⚠ Sous objectif'}
-                </p>
-            </div>
-        """, unsafe_allow_html=True)
+            <div class="pb-pct">{servis:,} servis · {pct_s:.1f}%</div>
+        </div>
+    """, unsafe_allow_html=True)
 
 
 def render_alerts(metrics: Dict):
-    """Affiche les alertes basées sur les seuils"""
-    
-    alerts = []
-    
-    if metrics.get('pct_servis', 0) < 70:
-        alerts.append(('danger', f"Taux de ménages servis critique: {metrics['pct_servis']:.1f}% (objectif: 80%)"))
-    elif metrics.get('pct_servis', 0) < 80:
-        alerts.append(('warning', f"Taux de ménages servis sous l'objectif: {metrics['pct_servis']:.1f}% (objectif: 80%)"))
-    else:
-        alerts.append(('success', f"Excellent taux de ménages servis: {metrics['pct_servis']:.1f}%"))
-    
-    if metrics.get('pct_correct', 0) < 70:
-        alerts.append(('danger', f"Précision de distribution critique: {metrics['pct_correct']:.1f}%"))
-    
-    if metrics.get('pct_informes', 0) < 60:
-        alerts.append(('warning', "Sensibilisation insuffisante sur l'utilisation des MILDA"))
-    
-    for alert_type, message in alerts:
+    """Affiche les alertes — Aurora Edition"""
+    checks = [
+        ("pct_servis",   80, 70, "Couverture ménages servis",
+         "Conforme à l'objectif national (≥ 80%)",
+         "Légèrement sous l'objectif — à surveiller",
+         "Taux critique — action immédiate requise"),
+        ("pct_correct",  80, 70, "Conformité distribution",
+         "Distribution respecte la clé de répartition",
+         "Quelques écarts détectés",
+         "Non-conformité critique détectée"),
+        ("pct_marques",  80, 65, "Marquage des ménages",
+         "Marquage des ménages satisfaisant",
+         "Taux de marquage insuffisant",
+         "Marquage très insuffisant — renforcer"),
+        ("pct_informes", 60, 45, "Sensibilisation MILDA",
+         "Sensibilisation communautaire effective",
+         "Sensibilisation à renforcer",
+         "Déficit de sensibilisation important"),
+    ]
+    icons = {"success":"✅","warning":"⚠️","danger":"🔴","info":"ℹ️"}
+
+    for key, seuil_ok, seuil_crit, label, msg_ok, msg_warn, msg_crit in checks:
+        val = metrics.get(key, 0)
+        if val >= seuil_ok:
+            t, msg = "success", msg_ok
+        elif val >= seuil_crit:
+            t, msg = "warning", msg_warn
+        else:
+            t, msg = "danger", msg_crit
+
         st.markdown(f"""
-            <div class="alert-box alert-{alert_type}">
-                <strong>{'🔴' if alert_type == 'danger' else '⚠️' if alert_type == 'warning' else '✅'}</strong> {message}
+            <div class="alert-box alert-{t}">
+                <div class="alert-icon">{icons[t]}</div>
+                <div class="alert-body">
+                    <div class="alert-title">{label}</div>
+                    <div class="alert-msg">{msg}</div>
+                </div>
+                <div class="alert-val">{val:.1f}% <span style="font-size:.65rem;opacity:.6">/ {seuil_ok}%</span></div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -1207,7 +1798,7 @@ def render_alerts(metrics: Dict):
 def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     """Page principale du dashboard"""
     
-    st.markdown("## 📊 Vue d'ensemble")
+    st.markdown('<div class="section-title">📊 Vue d\'ensemble <span class="pill">Indicateurs Clés</span></div>', unsafe_allow_html=True)
     
     # Calcul des métriques
     metrics = MetricsCalculator.calculate_coverage_metrics(data)
@@ -1219,7 +1810,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     st.markdown("---")
     
     # Alertes
-    with st.expander("🔔 Alertes et Notifications", expanded=True):
+    with st.expander("🔔 Alertes & Notifications Opérationnelles", expanded=True):
         render_alerts(metrics)
     
     st.markdown("---")
@@ -1228,7 +1819,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 📈 Indicateurs par Province")
+        st.markdown('<div class="section-title">📈 Indicateurs par Province</div>', unsafe_allow_html=True)
         if 'resume_province' in tables and len(tables['resume_province']) > 0:
             fig = VisualizationEngine.create_comparison_chart(
                 tables['resume_province'],
@@ -1239,7 +1830,7 @@ def page_dashboard(data: pd.DataFrame, tables: Dict[str, pd.DataFrame]):
             st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        st.markdown("### 🎯 Score de qualité global")
+        st.markdown('<div class="section-title">🎯 Score de Qualité Global</div>', unsafe_allow_html=True)
         fig = VisualizationEngine.create_kpi_gauge(
             quality_score,
             "Score de qualité",
@@ -3639,7 +4230,14 @@ def main():
 
     else:
         # Écran d'accueil informatif
-        st.info("👆 Connectez-vous à KoBo ou importez un ou plusieurs fichiers Excel (Sidebar) pour générer les analyses.")
+        st.markdown("""
+            <div class="welcome-box">
+                <h3>▶ Système prêt — En attente de données</h3>
+                <p>Connectez-vous à <strong>KoBoToolbox</strong> via le panneau latéral pour charger
+                les données en temps réel, ou importez un fichier <strong>Excel (.xlsx)</strong>
+                pour l'analyse hors-ligne.</p>
+            </div>
+        """, unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
